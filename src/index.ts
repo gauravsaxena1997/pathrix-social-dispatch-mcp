@@ -1,5 +1,15 @@
 export { registerSocialDispatchTools } from "./tools";
 
+// ─── Open event hook ──────────────────────────────────────────────────────────
+
+export type PackageEvent = {
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+};
+
+export type OnEventHook = (e: PackageEvent) => void | Promise<void>;
+
 // Config constants
 export { API_ENDPOINTS, POLL_CONFIG, PLATFORM_LIMITS, DISPATCH_CONFIG } from "./config";
 
@@ -43,6 +53,7 @@ export type {
   ContentStore,
   ContentRow,
   SocialDispatchDeps,
+  SocialDispatchEvent,
 } from "./schema";
 
 export { PUBLISH_PLATFORMS } from "./schema";

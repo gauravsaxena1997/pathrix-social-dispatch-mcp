@@ -1,14 +1,14 @@
 # @pathrix/social-dispatch
 
-Publishing arm for [Pathrix](https://github.com/gauravsaxena1997/pathrix-social-dispatch-mcp). Draft content with your AI partner, schedule it, and it auto-posts to Instagram, Threads, Facebook Page, Reddit, YouTube, and X - with per-platform status tracking and Discord alerts.
+MCP-driven multi-platform publisher. Bring your own content store and auth store - Social Dispatch handles the OAuth flows, platform APIs, scheduling, retry logic, and manual-flag detection across Instagram, Threads, Facebook Page, Reddit, YouTube, and X.
 
 ---
 
 ## Why Social Dispatch
 
-Most content systems stop at drafts. You still have to open six apps, copy-paste captions, handle platform quirks, and remember to post. Social Dispatch closes that loop: one MCP call schedules a post, a background cron fires it at the right time, and you get a Discord ping when it lands.
+Most content systems stop at drafts. You still have to open six apps, copy-paste captions, handle platform quirks, and remember to post. Social Dispatch closes that loop: one MCP call schedules a post, a background cron fires it at the right time, and your notification hook fires when it lands.
 
-When a platform requires a manual step (Instagram Reel with trending audio, for example), it flags the post, pings you with the content, and gives you a 30-second in-app job instead of a 30-minute context switch.
+When a platform requires a manual step (Instagram Reel with trending audio, for example), it flags the post and emits an event your host can route to any notification channel.
 
 ---
 
@@ -19,38 +19,37 @@ Claude Code, Claude Desktop, Cursor, Windsurf, or any client that speaks MCP.
 ```json
 {
   "mcpServers": {
-    "pathrix": {
+    "social-dispatch": {
       "command": "node",
-      "args": ["/path/to/pathrix/.next/standalone/server.js"],
+      "args": ["/path/to/your-app/server.js"],
       "env": {
-        "MCP_MODE": "true"
+        "NEXT_PUBLIC_BASE_URL": "https://example.com"
       }
     }
   }
 }
 ```
 
-> v0.1.0 note: Social Dispatch is bundled with Pathrix. It reads content rows from the Pathrix SQLite DB. Standalone mode (works without Pathrix) is planned for v0.2.0.
-
 ---
 
-## Quick start
+## Quick start (standalone)
 
-1. Clone Pathrix and install dependencies:
+See [Running Without a Host Framework](#running-without-a-host-framework) for a complete standalone setup.
+
+1. Install:
    ```bash
-   git clone https://github.com/gauravsaxena1997/pathrix-social-dispatch-mcp
-   cd pathrix
-   pnpm install
+   npm install @pathrix/social-dispatch
    ```
 
-2. Add platform credentials to `.env` (see Environment Variables below)
+2. Implement `ContentStore` and `PlatformAuthStore` (see interfaces below)
 
-3. Start Pathrix:
-   ```bash
-   pnpm dev
+3. Set `NEXT_PUBLIC_BASE_URL` in env - required for OAuth callbacks
+
+4. Register tools on your MCP server:
+   ```typescript
+   import { registerSocialDispatchTools } from "@pathrix/social-dispatch";
+   registerSocialDispatchTools(mcpServer, { contentStore, authStore, publisher });
    ```
-
-4. Open `http://localhost:8888/documentation/social-dispatch` and click Connect for each platform
 
 5. Ask your AI partner:
    > "Schedule this content for 5pm tomorrow on Instagram and X"
@@ -99,7 +98,7 @@ social_mark_published(contentId="abc123", platform="instagram", postUrl="https:/
 ### Auth flow
 
 ```
-User clicks Connect (Pathrix UI)
+User clicks Connect (your app UI)
     |
     v
 OAuth initiation route (/api/social-dispatch/auth/<platform>)
@@ -111,10 +110,10 @@ Platform login page (Meta, Google, X, Reddit)
 Callback route (/api/social-dispatch/auth/<platform>/callback)
     |  exchanges code for tokens
     v
-Records table (type="platform_auth", title="social-dispatch:<platform>:default")
+PlatformAuthStore.save({ platform, accountId, tokens })
     |  tokens stored as JSON: { access_token, refresh_token, expires_at }
     v
-Platform Connection Status on doc page shows green
+Platform connected
 ```
 
 ### Dispatch flow
@@ -137,7 +136,7 @@ Result saved
     |  publishStatus = "published" | "failed" | "manual_required"
     |  platformPostIds = { instagram: "https://...", x: "https://..." }
     v
-Discord alert fires
+onEvent fires (wire to Discord, Slack, email, or any channel)
 ```
 
 ### Manual-required flow
@@ -148,13 +147,13 @@ IG adapter detects trending audio restriction
     v
 publishStatus = "manual_required"
 manualFlags = ["instagram:trending_audio"]
-Discord alert pings you with caption + instructions
+onEvent fires with caption + instructions (route to any notification channel)
     |
     v
 You open IG Reels in-app (~30s) - pick audio, publish
     |
     v
-Paste live URL into Pathrix drawer OR call social_mark_published()
+Call social_mark_published() with the live URL
     |
     v
 publishStatus = "published", platformPostIds updated
@@ -244,24 +243,28 @@ Copy `.env.example` to `.env` and fill in the values.
 
 ## Data storage
 
-**Auth tokens** are stored in the Pathrix `Record` table:
+Social Dispatch is storage-agnostic. You implement two interfaces and it never touches your DB directly.
+
+**Auth tokens** flow through `PlatformAuthStore`:
 ```
-type = "platform_auth"
-title = "social-dispatch:<platform>:default"
-configJson = { platform, accountId }
-dataJson = { access_token, refresh_token, expires_at }
+PlatformAuth {
+  platform    - "instagram" | "x" | "youtube" | ...
+  accountId   - your account identifier
+  tokens      - { access_token, refresh_token?, expires_at }
+}
 ```
 
-No new tables. Follows the same pattern as the Scout Reddit integration.
-
-**Content publish state** is tracked on the `Content` table:
+**Content publish state** fields expected on your `ContentRow`:
 ```
 publishStatus     - draft | scheduled | publishing | published | failed | manual_required
 platformPostIds   - JSON { instagram: "url", x: "url", ... }
 publishError      - last error message
 manualFlags       - JSON ["instagram:trending_audio", ...]
-platformTargets   - JSON ["instagram", "x", ...]
+scheduledAt       - Date | null
+publishedAt       - Date | null
 ```
+
+See the `ContentStore` and `PlatformAuthStore` interfaces in `src/schema.ts` for the full contract.
 
 ---
 
@@ -269,8 +272,8 @@ platformTargets   - JSON ["instagram", "x", ...]
 
 | Platform | Limit | Handling |
 |---|---|---|
-| X / Twitter | 1,500 writes/month (free) | v0.1.1: counter in Records, warn at 80% |
-| YouTube | 10,000 units/day, 1,600/upload | v0.1.1: quota tracking in Records |
+| X / Twitter | 1,500 writes/month (free) | v0.1.1: counter in host store, warn at 80% |
+| YouTube | 10,000 units/day, 1,600/upload | v0.1.1: quota tracking via QuotaStore |
 | Reddit | 60 req/min | Not an issue at solo volume |
 | Meta / Instagram | No hard quota for personal posting | Container policy violations caught as errors |
 
@@ -278,7 +281,7 @@ platformTargets   - JSON ["instagram", "x", ...]
 
 ## Cron jobs (required for scheduled publishing)
 
-Three cron jobs must be registered in Pathrix for publishing to work automatically:
+Three cron jobs must run in your host application for publishing to work automatically:
 
 | Job | Schedule | Purpose |
 |---|---|---|
@@ -286,17 +289,13 @@ Three cron jobs must be registered in Pathrix for publishing to work automatical
 | `REFRESH_PLATFORM_TOKENS` | Daily 3am | Proactively refreshes Meta, YouTube, X tokens before they expire |
 | `WATCHDOG_STALLED_PUBLISHING` | Every 15 min | Resets rows stuck in "publishing" >10 min back to scheduled |
 
-Add them via the Pathrix Automations page (`/automations`) or via the crons seed script.
+Register them with any cron system (node-cron, BullMQ, Vercel Cron, etc.). See the standalone guide below for reference implementations.
 
 ---
 
-## Running Without Pathrix
+## Running Without a Host Framework
 
-> This section is for developers building their own system on top of the adapter layer. Pathrix users can skip this.
-
-The adapters (`src/adapters/`) and auth helpers (`src/auth/`) have zero Pathrix dependencies - you can import them directly. The only Pathrix-specific layer is `src/lib/social-dispatch/` which reads from Pathrix's SQLite `Content` table.
-
-To run Social Dispatch standalone you need to implement three things:
+The adapters (`src/adapters/`) and auth helpers (`src/auth/`) have zero host dependencies - import them directly into any Node.js application. You need to implement three interfaces:
 
 ### 1. ContentStore
 
@@ -378,7 +377,7 @@ The files in `packages/social-dispatch/src/dispatch/` (`publisher.ts`, `schedule
 
 ### Known limitations in v0.1.0
 
-- YouTube quota tracking (`getYouTubeDailyQuotaUsed`) always returns 0. Implement your own counter in your storage layer using the Records table pattern or any key-value store. Reset daily at midnight UTC.
+- YouTube quota tracking (`getYouTubeDailyQuotaUsed`) always returns 0. Implement your own counter in your `QuotaStore` or any key-value store. Reset daily at midnight UTC.
 - X monthly write counter is not tracked. At solo posting volumes (1-2 posts/day) the free tier limit (1,500 writes/month) is not a concern.
 
 ---

@@ -94,8 +94,7 @@ export async function pollYouTubeProcessing(
 }
 
 export async function getYouTubeDailyQuotaUsed(accessToken: string): Promise<number> {
-  // YouTube doesn't expose quota via API — we track it ourselves in Records table.
-  // This is a stub; actual tracking lives in src/lib/social-dispatch/quota-tracker.ts (Phase 4)
+  // YouTube doesn't expose quota via API. Implement tracking in your host via a QuotaStore.
   void accessToken;
   return 0;
 }

@@ -2,10 +2,21 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { SocialDispatchDeps } from "./schema";
 
+const DepsSchema = z.object({
+  contentStore: z.object({ get: z.function(), schedule: z.function(), cancelSchedule: z.function(), resolveManualFlag: z.function() }),
+  authStore: z.object({ load: z.function(), save: z.function(), list: z.function() }),
+  publisher: z.function(),
+  onEvent: z.function().optional(),
+});
+
 export function registerSocialDispatchTools(
   server: McpServer,
-  { contentStore, authStore, publisher }: SocialDispatchDeps
+  deps: SocialDispatchDeps
 ): void {
+  DepsSchema.parse(deps);
+  const { contentStore, authStore, publisher, onEvent } = deps;
+  const emit = (type: string, payload: Record<string, unknown>) =>
+    onEvent?.({ type, payload, timestamp: new Date().toISOString() });
 
   server.tool(
     "social_list_platform_auth",
@@ -15,7 +26,7 @@ export function registerSocialDispatchTools(
       try {
         const platforms = await authStore.list();
         if (platforms.length === 0) {
-          return { content: [{ type: "text", text: "No platforms connected yet. Open /documentation/social-dispatch and click Connect for each platform." }] };
+          return { content: [{ type: "text", text: "No platforms connected yet. Connect each platform via your application's auth flow." }] };
         }
         const lines = platforms.map((p) => `- ${p.platform} (${p.accountId}) - last updated ${p.updatedAt.toISOString()}`);
         return { content: [{ type: "text", text: `Connected platforms:\n${lines.join("\n")}` }] };
@@ -27,14 +38,15 @@ export function registerSocialDispatchTools(
 
   server.tool(
     "social_publish_now",
-    `Publish a Pathrix Content row immediately to its platform.
+    `Publish a content row immediately to its platform.
 The content's platform field determines where it posts.
 For Reddit: caption must start with "r/subredditname" on the first line.
-Returns per-platform publish results (status, postUrl, error) and fires a Discord alert.`,
-    { contentId: z.string().describe("ID of the Pathrix Content row to publish") },
+Returns per-platform publish results (status, postUrl, error).`,
+    { contentId: z.string().describe("ID of the content row to publish") },
     async ({ contentId }) => {
       try {
         const results = await publisher(contentId);
+        await emit("dispatch.publish_complete", { contentId, results });
         const lines = results.map((r) => {
           if (r.status === "published") return `- ${r.platform}: published - ${r.postUrl}`;
           if (r.status === "manual_required") return `- ${r.platform}: manual_required - finish in app, then call social_mark_published`;
@@ -42,6 +54,7 @@ Returns per-platform publish results (status, postUrl, error) and fires a Discor
         });
         return { content: [{ type: "text", text: `Publish results for ${contentId}:\n${lines.join("\n")}` }] };
       } catch (err) {
+        await emit("dispatch.publish_error", { contentId, error: err instanceof Error ? err.message : String(err) });
         return { content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     }
@@ -49,8 +62,8 @@ Returns per-platform publish results (status, postUrl, error) and fires a Discor
 
   server.tool(
     "social_get_publish_status",
-    "Get the current publish status of a Pathrix Content row. Returns publishStatus, per-platform post URLs, any error message, and the publishedAt timestamp.",
-    { contentId: z.string().describe("ID of the Pathrix Content row") },
+    "Get the current publish status of a content row. Returns publishStatus, per-platform post URLs, any error message, and the publishedAt timestamp.",
+    { contentId: z.string().describe("ID of the content row") },
     async ({ contentId }) => {
       try {
         const row = await contentStore.get(contentId);
@@ -77,11 +90,11 @@ Returns per-platform publish results (status, postUrl, error) and fires a Discor
 
   server.tool(
     "social_schedule",
-    `Schedule a Pathrix Content row to be published at a specific time.
+    `Schedule a content row to be published at a specific time.
 Sets publishStatus to 'scheduled' and scheduledAt to the given timestamp.
-The PUBLISH_DUE_CONTENT cron job picks it up automatically when the time arrives.`,
+A PUBLISH_DUE_CONTENT cron job (or equivalent scheduler) picks it up when the time arrives.`,
     {
-      contentId: z.string().describe("ID of the Pathrix Content row"),
+      contentId: z.string().describe("ID of the content row"),
       scheduledAt: z.string().describe("ISO 8601 datetime string for when to publish (UTC)"),
     },
     async ({ contentId, scheduledAt }) => {
@@ -100,8 +113,8 @@ The PUBLISH_DUE_CONTENT cron job picks it up automatically when the time arrives
 
   server.tool(
     "social_cancel_schedule",
-    "Cancel a scheduled publish for a Pathrix Content row. Resets publishStatus from 'scheduled' back to 'draft'. Has no effect if the content is already publishing or published.",
-    { contentId: z.string().describe("ID of the Pathrix Content row") },
+    "Cancel a scheduled publish for a content row. Resets publishStatus from 'scheduled' back to 'draft'. Has no effect if the content is already publishing or published.",
+    { contentId: z.string().describe("ID of the content row") },
     async ({ contentId }) => {
       try {
         const result = await contentStore.cancelSchedule(contentId);
@@ -121,7 +134,7 @@ The PUBLISH_DUE_CONTENT cron job picks it up automatically when the time arrives
 Use this after manually completing a post in-app (e.g., Instagram Reel where trending audio blocked auto-publish).
 Saves the post URL and removes the platform from manualFlags. If no flags remain, flips publishStatus to 'published'.`,
     {
-      contentId: z.string().describe("ID of the Pathrix Content row"),
+      contentId: z.string().describe("ID of the content row"),
       platform: z.string().describe("Platform that was manually published, e.g. 'instagram'"),
       postUrl: z.string().optional().describe("URL of the live post (recommended)"),
     },

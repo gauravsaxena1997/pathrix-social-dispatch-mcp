@@ -10,7 +10,9 @@ function requireEnv(name: string): string {
 }
 
 function callbackBase(): string {
-  return process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8888";
+  const base = process.env.NEXT_PUBLIC_BASE_URL;
+  if (!base) throw new Error("BASE_URL is required. Set NEXT_PUBLIC_BASE_URL in env (e.g. https://example.com).");
+  return base;
 }
 
 // ─── Meta ─────────────────────────────────────────────────────────────────────

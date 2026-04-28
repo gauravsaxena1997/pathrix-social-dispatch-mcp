@@ -1,4 +1,4 @@
-const UA = "pathrix-social-dispatch/0.1 (personal career OS)";
+const UA = "pathrix-social-dispatch/0.1";
 const OAUTH_BASE = "https://oauth.reddit.com";
 
 export interface RedditPostResult {

@@ -90,10 +90,19 @@ export interface ContentStore {
   resolveManualFlag(id: string, platform: string, postUrl: string): Promise<{ finalStatus: PublishStatus }>;
 }
 
+// ─── Event hook (optional - wire to Discord, Slack, email, or any channel) ────
+
+export type SocialDispatchEvent = {
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+};
+
 // ─── Dependency bundle passed to registerSocialDispatchTools ─────────────────
 
 export interface SocialDispatchDeps {
   contentStore: ContentStore;
   authStore: PlatformAuthStore;
   publisher: (contentId: string) => Promise<PublishResult[]>;
+  onEvent?: (e: SocialDispatchEvent) => void | Promise<void>;
 }
