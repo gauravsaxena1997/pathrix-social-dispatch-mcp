@@ -8,7 +8,7 @@ export interface IgPublishResult {
   mediaId: string;
 }
 
-async function graphPost(path: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+async function graphPost(path: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
   const res = await fetch(`${GRAPH}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -94,6 +94,34 @@ export async function publishIgReel(
   });
   const mediaId = pub.id as string;
   return { url: `https://www.instagram.com/reel/${mediaId}/`, mediaId };
+}
+
+export async function replyToIgComment(
+  commentId: string,
+  message: string,
+  accessToken: string
+): Promise<void> {
+  await graphPost(`${commentId}/replies`, { message, access_token: accessToken });
+}
+
+export async function sendIgDM(
+  pageId: string,
+  commentId: string,
+  message: string,
+  pageAccessToken: string
+): Promise<void> {
+  await graphPost(`${pageId}/messages`, {
+    recipient: { comment_id: commentId },
+    message: { text: message },
+    access_token: pageAccessToken,
+  });
+}
+
+export async function likeIgComment(
+  commentId: string,
+  accessToken: string
+): Promise<void> {
+  await graphPost(`${commentId}/likes`, { access_token: accessToken });
 }
 
 export async function publishIgCarousel(

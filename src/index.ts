@@ -23,7 +23,7 @@ export { initXAuth, handleXCallback } from "./auth/handlers";
 
 // Adapters
 export { publishSelfPost, publishLinkPost, getUserRecentPosts, checkSelfPromoRatio } from "./adapters/reddit";
-export { publishIgImage, publishIgReel, publishIgCarousel } from "./adapters/instagram";
+export { publishIgImage, publishIgReel, publishIgCarousel, replyToIgComment, sendIgDM, likeIgComment } from "./adapters/instagram";
 export { publishThreadsPost } from "./adapters/threads";
 export { publishFbPagePost, publishFbPagePhoto } from "./adapters/facebook-page";
 export { uploadYouTubeVideo, pollYouTubeProcessing } from "./adapters/youtube";
@@ -33,6 +33,13 @@ export { publishXTweet, publishXThread, splitIntoThread } from "./adapters/x";
 export { getMetaAuthorizeUrl, exchangeMetaCode, getLongLivedToken, refreshLongLivedToken, getIgUserId, getPageId, getThreadsUserId } from "./auth/meta";
 export { getYouTubeAuthorizeUrl, exchangeYouTubeCode, refreshYouTubeToken } from "./auth/youtube";
 export { generatePkce, getXAuthorizeUrl, exchangeXCode, refreshXToken } from "./auth/x";
+
+// Instagram automation (comment-to-DM engine + webhook handler)
+export { processCommentEvent } from "./automation/engine";
+export { verifyInstagramChallenge, processInstagramWebhookPayload } from "./webhooks/instagram";
+export type { CommentAutomationRule, AutomationRuleStore } from "./automation/types";
+export type { CommentEventDeps } from "./automation/engine";
+export type { InstagramWebhookDeps, InstagramWebhookResult } from "./webhooks/instagram";
 
 // Types
 export type { RedditPostResult } from "./adapters/reddit";
