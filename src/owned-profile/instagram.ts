@@ -1,4 +1,4 @@
-import type { OwnedProfileSnapshot, OwnedProfilePost } from "../schema";
+import type { OwnedProfileSnapshot, OwnedProfilePost, PendingComment } from "../schema";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -173,4 +173,77 @@ export async function scrapeInstagramGraphProfile(
       audience_city: JSON.stringify(audienceCity),
     },
   };
+}
+
+// Fetch top-level comments on recent posts that we haven't replied to yet.
+// Scans the last `maxPosts` posts, returns up to `maxPerPost` unreplied comments per post.
+export async function fetchIgPendingComments(
+  igUserId: string,
+  ownUsername: string,
+  accessToken: string,
+  opts: { maxPosts?: number; maxPerPost?: number } = {},
+): Promise<PendingComment[]> {
+  const { maxPosts = 8, maxPerPost = 3 } = opts;
+  const pending: PendingComment[] = [];
+
+  try {
+    const mediaRes = await fetch(
+      `${GRAPH}/${igUserId}/media?fields=id,caption,timestamp,permalink&limit=${maxPosts}&access_token=${accessToken}`
+    );
+    if (!mediaRes.ok) return [];
+    const mediaJson = (await mediaRes.json()) as { data?: Array<Record<string, string>> };
+    const posts = mediaJson.data ?? [];
+
+    for (const post of posts) {
+      const postId = post.id;
+      const postUrl = post.permalink ?? `https://instagram.com/p/${postId}`;
+      const postTitle = (post.caption ?? "").slice(0, 80) || "Instagram post";
+
+      try {
+        await new Promise((r) => setTimeout(r, 100));
+        const commentsRes = await fetch(
+          `${GRAPH}/${postId}/comments?fields=id,text,username,timestamp,like_count,replies{id,username,text,timestamp}&limit=20&access_token=${accessToken}`
+        );
+        if (!commentsRes.ok) continue;
+        const commentsJson = (await commentsRes.json()) as {
+          data?: Array<{
+            id: string; text: string; username: string; timestamp: string; like_count?: number;
+            replies?: { data?: Array<{ id: string; username: string; text: string; timestamp: string }> };
+          }>;
+        };
+
+        let postPending = 0;
+        for (const comment of commentsJson.data ?? []) {
+          if (postPending >= maxPerPost) break;
+          // Skip our own comments
+          if (comment.username === ownUsername) continue;
+          // Skip if we already replied
+          const ourReply = (comment.replies?.data ?? []).some((r) => r.username === ownUsername);
+          if (ourReply) continue;
+
+          const publishedMs = new Date(comment.timestamp).getTime();
+          const ageHours = (Date.now() - publishedMs) / 3600_000;
+
+          pending.push({
+            commentId: comment.id,
+            postId,
+            postTitle,
+            postUrl,
+            commentBody: (comment.text ?? "").slice(0, 300),
+            author: comment.username,
+            publishedAt: comment.timestamp,
+            likes: comment.like_count ?? 0,
+            isUrgent: ageHours > 12,
+          });
+          postPending++;
+        }
+      } catch {
+        // skip this post
+      }
+    }
+  } catch {
+    // return what we have
+  }
+
+  return pending;
 }

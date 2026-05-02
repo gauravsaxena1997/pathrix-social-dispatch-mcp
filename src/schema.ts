@@ -106,6 +106,26 @@ export interface OwnedProfilePost {
   duration?: number;
 }
 
+export interface PendingComment {
+  commentId: string;
+  postId: string;
+  postTitle: string;
+  postUrl: string;
+  commentBody: string;
+  author: string;
+  publishedAt: string;
+  likes: number;
+  isUrgent: boolean;
+}
+
+export interface EngagementDelta {
+  followersDelta: number;
+  viewsDelta?: number;
+  likesDelta?: number;
+  measuredAt: string;
+  windowHours: number;
+}
+
 export interface OwnedProfileSnapshot {
   platform: string;
   handle: string;
@@ -116,6 +136,8 @@ export interface OwnedProfileSnapshot {
   avatarUrl?: string;
   bannerUrl?: string;
   displayName?: string;
+  pendingComments?: PendingComment[];
+  engagementDelta?: EngagementDelta;
 }
 
 export interface YouTubeAnalytics28d {

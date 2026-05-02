@@ -1,4 +1,4 @@
-import type { OwnedProfileSnapshot, OwnedProfilePost, YouTubeAnalytics28d } from "../schema";
+import type { OwnedProfileSnapshot, OwnedProfilePost, YouTubeAnalytics28d, PendingComment } from "../schema";
 
 const YT_API = "https://www.googleapis.com/youtube/v3";
 const YT_ANALYTICS_API = "https://youtubeanalytics.googleapis.com/v2";
@@ -40,6 +40,74 @@ export async function fetchYouTubeAnalytics(token: string): Promise<YouTubeAnaly
     subscribersGained: Math.round(row[4] ?? 0),
     subscribersLost: Math.round(row[5] ?? 0),
   };
+}
+
+// Fetch top-level comments on our recent videos that we haven't replied to.
+export async function fetchYtPendingComments(
+  accessToken: string,
+  opts: { maxResults?: number } = {},
+): Promise<PendingComment[]> {
+  const { maxResults = 20 } = opts;
+  const pending: PendingComment[] = [];
+
+  try {
+    // moderationStatus=heldForReview shows unanswered comments; use likelySpam=false
+    const res = await fetch(
+      `${YT_API}/commentThreads?part=snippet&allThreadsRelatedToChannelId=mine&order=time&maxResults=${maxResults}&moderationStatus=published`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) return [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- YouTube API response
+    const json: any = await res.json();
+    const items: unknown[] = json.items ?? [];
+
+    for (const item of items) {
+      const t = item as {
+        snippet?: {
+          topLevelComment?: {
+            id?: string;
+            snippet?: {
+              authorDisplayName?: string;
+              textDisplay?: string;
+              publishedAt?: string;
+              likeCount?: number;
+              videoId?: string;
+            };
+          };
+          totalReplyCount?: number;
+          canReply?: boolean;
+          videoId?: string;
+        };
+      };
+
+      const top = t.snippet?.topLevelComment?.snippet;
+      if (!top) continue;
+      // Skip if channel already replied (totalReplyCount > 0 is a rough proxy;
+      // for precision we'd need to fetch replies and check authorChannelId)
+      if ((t.snippet?.totalReplyCount ?? 0) > 0) continue;
+
+      const videoId = top.videoId ?? t.snippet?.videoId ?? "";
+      const publishedMs = top.publishedAt ? new Date(top.publishedAt).getTime() : 0;
+      const ageHours = publishedMs > 0 ? (Date.now() - publishedMs) / 3600_000 : 0;
+
+      pending.push({
+        commentId: t.snippet?.topLevelComment?.id ?? "",
+        postId: videoId,
+        postTitle: "YouTube video",
+        postUrl: videoId ? `https://youtube.com/watch?v=${videoId}` : "",
+        commentBody: (top.textDisplay ?? "").replace(/<[^>]+>/g, "").slice(0, 300),
+        author: top.authorDisplayName ?? "unknown",
+        publishedAt: top.publishedAt ?? new Date().toISOString(),
+        likes: top.likeCount ?? 0,
+        isUrgent: ageHours > 24,
+      });
+    }
+  } catch {
+    // return what we have
+  }
+
+  return pending;
 }
 
 export async function scrapeYouTubeProfileViaApi(

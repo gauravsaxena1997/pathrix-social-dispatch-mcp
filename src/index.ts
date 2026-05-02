@@ -42,8 +42,8 @@ export type { CommentEventDeps } from "./automation/engine";
 export type { InstagramWebhookDeps, InstagramWebhookResult } from "./webhooks/instagram";
 
 // Owned-account profile scrapers (Instagram Graph API + YouTube Data API v3)
-export { getIgUserIdForHandle, scrapeInstagramGraphProfile } from "./owned-profile/instagram";
-export { fetchYouTubeAnalytics, scrapeYouTubeProfileViaApi } from "./owned-profile/youtube";
+export { getIgUserIdForHandle, scrapeInstagramGraphProfile, fetchIgPendingComments } from "./owned-profile/instagram";
+export { fetchYouTubeAnalytics, scrapeYouTubeProfileViaApi, fetchYtPendingComments } from "./owned-profile/youtube";
 
 // Types
 export type { RedditPostResult } from "./adapters/reddit";
@@ -68,6 +68,8 @@ export type {
   OwnedProfilePost,
   OwnedProfileSnapshot,
   YouTubeAnalytics28d,
+  PendingComment,
+  EngagementDelta,
 } from "./schema";
 
 export { PUBLISH_PLATFORMS } from "./schema";
