@@ -41,6 +41,10 @@ export type { CommentAutomationRule, AutomationRuleStore } from "./automation/ty
 export type { CommentEventDeps } from "./automation/engine";
 export type { InstagramWebhookDeps, InstagramWebhookResult } from "./webhooks/instagram";
 
+// Owned-account profile scrapers (Instagram Graph API + YouTube Data API v3)
+export { getIgUserIdForHandle, scrapeInstagramGraphProfile } from "./owned-profile/instagram";
+export { fetchYouTubeAnalytics, scrapeYouTubeProfileViaApi } from "./owned-profile/youtube";
+
 // Types
 export type { RedditPostResult } from "./adapters/reddit";
 export type { IgPublishResult, IgMediaType } from "./adapters/instagram";
@@ -61,6 +65,9 @@ export type {
   ContentRow,
   SocialDispatchDeps,
   SocialDispatchEvent,
+  OwnedProfilePost,
+  OwnedProfileSnapshot,
+  YouTubeAnalytics28d,
 } from "./schema";
 
 export { PUBLISH_PLATFORMS } from "./schema";

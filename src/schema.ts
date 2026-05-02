@@ -90,6 +90,43 @@ export interface ContentStore {
   resolveManualFlag(id: string, platform: string, postUrl: string): Promise<{ finalStatus: PublishStatus }>;
 }
 
+// ─── Owned-account profile snapshots ─────────────────────────────────────────
+
+export interface OwnedProfilePost {
+  id: string;
+  url: string;
+  content: string;
+  publishedAt: string;
+  likes: number;
+  comments: number;
+  shares?: number;
+  views?: number;
+  isViral: boolean;
+  imageUrl?: string;
+  duration?: number;
+}
+
+export interface OwnedProfileSnapshot {
+  platform: string;
+  handle: string;
+  fetchedAt: string;
+  followers: number;
+  posts: OwnedProfilePost[];
+  stats: Record<string, number | string>;
+  avatarUrl?: string;
+  bannerUrl?: string;
+  displayName?: string;
+}
+
+export interface YouTubeAnalytics28d {
+  watchTimeMinutes: number;
+  views: number;
+  likes: number;
+  avgViewDurationSec: number;
+  subscribersGained: number;
+  subscribersLost: number;
+}
+
 // ─── Event hook (optional - wire to Discord, Slack, email, or any channel) ────
 
 export type SocialDispatchEvent = {
