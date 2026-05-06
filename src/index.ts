@@ -14,12 +14,13 @@ export type OnEventHook = (e: PackageEvent) => void | Promise<void>;
 export { API_ENDPOINTS, POLL_CONFIG, PLATFORM_LIMITS, DISPATCH_CONFIG } from "./config";
 
 // Token refresh (framework-agnostic, requires PlatformAuthStore)
-export { getValidMetaToken, getValidYouTubeToken, getValidXToken, refreshAllTokens } from "./token-refresher";
+export { getValidMetaToken, getValidYouTubeToken, getValidXToken, getValidGmailToken, refreshAllTokens } from "./token-refresher";
 
 // Auth handler functions (OAuth init + callback logic)
 export { initMetaAuth, handleMetaCallback } from "./auth/handlers";
 export { initYouTubeAuth, handleYouTubeCallback } from "./auth/handlers";
 export { initXAuth, handleXCallback } from "./auth/handlers";
+export { initGmailAuth, handleGmailCallback } from "./auth/handlers";
 
 // Adapters
 export { publishSelfPost, publishLinkPost, getUserRecentPosts, checkSelfPromoRatio } from "./adapters/reddit";
@@ -33,6 +34,7 @@ export { publishXTweet, publishXThread, splitIntoThread } from "./adapters/x";
 export { getMetaAuthorizeUrl, exchangeMetaCode, getLongLivedToken, refreshLongLivedToken, getIgUserId, getPageId, getThreadsUserId } from "./auth/meta";
 export { getYouTubeAuthorizeUrl, exchangeYouTubeCode, refreshYouTubeToken } from "./auth/youtube";
 export { generatePkce, getXAuthorizeUrl, exchangeXCode, refreshXToken } from "./auth/x";
+export { getGmailAuthorizeUrl, exchangeGmailCode, refreshGmailToken } from "./auth/gmail";
 
 // Instagram automation (comment-to-DM engine + webhook handler)
 export { processCommentEvent } from "./automation/engine";

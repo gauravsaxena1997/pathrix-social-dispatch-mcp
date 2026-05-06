@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getMetaAuthorizeUrl, exchangeMetaCode, getLongLivedToken } from "./meta";
 import { getYouTubeAuthorizeUrl, exchangeYouTubeCode } from "./youtube";
 import { generatePkce, getXAuthorizeUrl, exchangeXCode } from "./x";
+import { getGmailAuthorizeUrl, exchangeGmailCode } from "./gmail";
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -59,6 +60,33 @@ export async function handleYouTubeCallback(
   const redirectUri = `${callbackBase()}/api/social-dispatch/auth/youtube/callback`;
 
   const tok = await exchangeYouTubeCode(code, redirectUri, clientId, clientSecret);
+  return {
+    access_token: tok.access_token,
+    refresh_token: tok.refresh_token,
+    expires_at: Date.now() + tok.expires_in * 1000,
+  };
+}
+
+// ─── Gmail ────────────────────────────────────────────────────────────────────
+
+export function initGmailAuth(): { redirectUrl: string; state: string } {
+  const clientId = requireEnv("GOOGLE_CLIENT_ID");
+  const state = crypto.randomBytes(16).toString("hex");
+  const redirectUri = `${callbackBase()}/api/social-dispatch/auth/gmail/callback`;
+  return { redirectUrl: getGmailAuthorizeUrl(state, redirectUri, clientId), state };
+}
+
+export async function handleGmailCallback(
+  code: string,
+  state: string,
+  expectedState: string
+): Promise<{ access_token: string; refresh_token: string; expires_at: number }> {
+  if (state !== expectedState) throw new Error("state_mismatch");
+  const clientId = requireEnv("GOOGLE_CLIENT_ID");
+  const clientSecret = requireEnv("GOOGLE_CLIENT_SECRET");
+  const redirectUri = `${callbackBase()}/api/social-dispatch/auth/gmail/callback`;
+
+  const tok = await exchangeGmailCode(code, redirectUri, clientId, clientSecret);
   return {
     access_token: tok.access_token,
     refresh_token: tok.refresh_token,

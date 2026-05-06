@@ -1,6 +1,7 @@
 import { refreshLongLivedToken } from "./auth/meta";
 import { refreshYouTubeToken } from "./auth/youtube";
 import { refreshXToken } from "./auth/x";
+import { refreshGmailToken } from "./auth/gmail";
 import type { PlatformAuthStore } from "./schema";
 
 const SKEW_MS = 5 * 60 * 1000;
@@ -97,10 +98,38 @@ export async function getValidXToken(
   return { accessToken: refreshed.access_token };
 }
 
+export async function getValidGmailToken(
+  accountId: string,
+  store: PlatformAuthStore
+): Promise<string | null> {
+  const auth = await store.load("gmail" as never, accountId);
+  if (!auth) return null;
+  const { access_token, refresh_token, expires_at } = auth.tokens as {
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+  };
+  if (isTokenValid(expires_at)) return access_token;
+
+  const refreshed = await refreshGmailToken(
+    refresh_token,
+    requireEnv("GOOGLE_CLIENT_ID"),
+    requireEnv("GOOGLE_CLIENT_SECRET")
+  );
+  const newExpiry = Date.now() + refreshed.expires_in * 1000;
+  await store.save({
+    platform: "gmail" as never,
+    accountId,
+    tokens: { access_token: refreshed.access_token, refresh_token, expires_at: newExpiry },
+  });
+  return refreshed.access_token;
+}
+
 export async function refreshAllTokens(store: PlatformAuthStore): Promise<void> {
   await Promise.allSettled([
     getValidMetaToken("default", store),
     getValidYouTubeToken("default", store),
     getValidXToken("default", store),
+    getValidGmailToken("default", store),
   ]);
 }
