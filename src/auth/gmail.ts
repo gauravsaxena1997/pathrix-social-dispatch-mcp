@@ -16,7 +16,7 @@ export async function exchangeGmailCode(
   redirectUri: string,
   clientId: string,
   clientSecret: string
-): Promise<{ access_token: string; refresh_token: string; expires_in: number; token_type: string }> {
+): Promise<{ access_token: string; refresh_token?: string; expires_in: number; token_type: string }> {
   const body = new URLSearchParams({ code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret, grant_type: "authorization_code" });
   const res = await fetch("https://oauth2.googleapis.com/token", { method: "POST", body });
   if (!res.ok) throw new Error(`gmail_code_exchange_${res.status}: ${await res.text()}`);

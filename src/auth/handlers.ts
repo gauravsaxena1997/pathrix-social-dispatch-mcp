@@ -80,7 +80,7 @@ export async function handleGmailCallback(
   code: string,
   state: string,
   expectedState: string
-): Promise<{ access_token: string; refresh_token: string; expires_at: number }> {
+): Promise<{ access_token: string; refresh_token?: string; expires_at: number }> {
   if (state !== expectedState) throw new Error("state_mismatch");
   const clientId = requireEnv("GOOGLE_CLIENT_ID");
   const clientSecret = requireEnv("GOOGLE_CLIENT_SECRET");
