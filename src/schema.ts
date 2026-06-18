@@ -100,9 +100,14 @@ export interface OwnedProfilePost {
   likes: number;
   comments: number;
   shares?: number;
+  reposts?: number;
   views?: number;
   isViral: boolean;
   imageUrl?: string;
+  mediaUrl?: string;
+  thumbnailUrl?: string;
+  mediaType?: string;
+  mediaProductType?: string;
   duration?: number;
 }
 
@@ -138,6 +143,68 @@ export interface OwnedProfileSnapshot {
   displayName?: string;
   pendingComments?: PendingComment[];
   engagementDelta?: EngagementDelta;
+}
+
+export type OwnedSocialPlatform = "instagram" | "youtube";
+
+export interface OwnedSocialAccountInput {
+  accessToken: string;
+  handle: string;
+}
+
+export interface OwnedSocialRecentPostsInput extends OwnedSocialAccountInput {
+  limit?: number;
+}
+
+export interface OwnedSocialPostDetailsInput extends OwnedSocialAccountInput {
+  postId: string;
+}
+
+export interface OwnedSocialAccountSummary {
+  platform: OwnedSocialPlatform;
+  handle: string;
+  fetchedAt: string;
+  followers: number;
+  following?: number;
+  totalPosts?: number;
+  displayName?: string;
+  avatarUrl?: string;
+  biography?: string;
+  website?: string;
+}
+
+export interface OwnedSocialAnalytics {
+  platform: OwnedSocialPlatform;
+  handle: string;
+  fetchedAt: string;
+  metrics: Record<string, number | string>;
+  audienceGenderAge?: Record<string, number>;
+  audienceCountry?: Record<string, number>;
+  audienceCity?: Record<string, number>;
+}
+
+export interface OwnedSocialComment {
+  id: string;
+  username: string;
+  text: string;
+  timestamp: string;
+  likeCount: number;
+}
+
+export interface OwnedSocialPostDetails {
+  platform: OwnedSocialPlatform;
+  postId: string;
+  fetchedAt: string;
+  metrics: Record<string, number>;
+  comments: OwnedSocialComment[];
+}
+
+export interface OwnedSocialProfileProvider {
+  getAccountSummary(input: OwnedSocialAccountInput): Promise<OwnedSocialAccountSummary>;
+  getRecentPosts(input: OwnedSocialRecentPostsInput): Promise<OwnedProfilePost[]>;
+  getAccountAnalytics(input: OwnedSocialAccountInput): Promise<OwnedSocialAnalytics>;
+  getPostDetails(input: OwnedSocialPostDetailsInput): Promise<OwnedSocialPostDetails>;
+  refreshAccountSnapshot(input: OwnedSocialAccountInput): Promise<OwnedProfileSnapshot>;
 }
 
 export interface YouTubeAnalytics28d {

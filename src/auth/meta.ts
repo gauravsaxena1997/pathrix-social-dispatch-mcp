@@ -12,6 +12,7 @@ export function getMetaAuthorizeUrl(state: string, redirectUri: string, clientId
       "instagram_manage_contents",
       "instagram_manage_insights",
       "instagram_manage_messages",
+      "pages_manage_metadata",
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
