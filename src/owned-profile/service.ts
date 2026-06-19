@@ -11,9 +11,11 @@ import type {
   OwnedSocialRecentPostsInput,
 } from "../schema";
 import { instagramOwnedProfileProvider } from "./instagram";
+import { youtubeOwnedProfileProvider } from "./youtube";
 
 const providers: Partial<Record<OwnedSocialPlatform, OwnedSocialProfileProvider>> = {
   instagram: instagramOwnedProfileProvider,
+  youtube: youtubeOwnedProfileProvider,
 };
 
 function getProvider(platform: OwnedSocialPlatform): OwnedSocialProfileProvider {

@@ -1,4 +1,15 @@
-import type { OwnedProfileSnapshot, OwnedProfilePost, YouTubeAnalytics28d, PendingComment } from "../schema";
+import type {
+  OwnedProfileSnapshot,
+  OwnedProfilePost,
+  OwnedSocialAccountInput,
+  OwnedSocialAccountSummary,
+  OwnedSocialAnalytics,
+  OwnedSocialPostDetails,
+  OwnedSocialPostDetailsInput,
+  OwnedSocialProfileProvider,
+  YouTubeAnalytics28d,
+  PendingComment,
+} from "../schema";
 
 const YT_API = "https://www.googleapis.com/youtube/v3";
 const YT_ANALYTICS_API = "https://youtubeanalytics.googleapis.com/v2";
@@ -202,3 +213,62 @@ export async function scrapeYouTubeProfileViaApi(
     },
   };
 }
+
+function requireYouTubeSnapshot(snapshot: OwnedProfileSnapshot | null, handle: string): OwnedProfileSnapshot {
+  if (!snapshot) {
+    throw new Error(`youtube_profile_not_found:${handle}`);
+  }
+  return snapshot;
+}
+
+async function refreshYouTubeAccountSnapshot(input: OwnedSocialAccountInput): Promise<OwnedProfileSnapshot> {
+  return requireYouTubeSnapshot(await scrapeYouTubeProfileViaApi(input.handle, input.accessToken), input.handle);
+}
+
+async function getYouTubeAccountSummary(input: OwnedSocialAccountInput): Promise<OwnedSocialAccountSummary> {
+  const snapshot = await refreshYouTubeAccountSnapshot(input);
+  return {
+    platform: "youtube",
+    handle: snapshot.handle,
+    fetchedAt: snapshot.fetchedAt,
+    followers: snapshot.followers,
+    totalPosts: typeof snapshot.stats.videoCount === "number" ? snapshot.stats.videoCount : undefined,
+    displayName: snapshot.displayName,
+    avatarUrl: snapshot.avatarUrl,
+  };
+}
+
+async function getYouTubeRecentPosts(
+  input: OwnedSocialAccountInput & { limit?: number },
+): Promise<OwnedProfilePost[]> {
+  const snapshot = await refreshYouTubeAccountSnapshot(input);
+  return snapshot.posts.slice(0, input.limit ?? 3);
+}
+
+async function getYouTubeAccountAnalytics(input: OwnedSocialAccountInput): Promise<OwnedSocialAnalytics> {
+  const snapshot = await refreshYouTubeAccountSnapshot(input);
+  return {
+    platform: "youtube",
+    handle: snapshot.handle,
+    fetchedAt: snapshot.fetchedAt,
+    metrics: snapshot.stats,
+  };
+}
+
+async function getYouTubePostDetails(input: OwnedSocialPostDetailsInput): Promise<OwnedSocialPostDetails> {
+  return {
+    platform: "youtube",
+    postId: input.postId,
+    fetchedAt: new Date().toISOString(),
+    metrics: {},
+    comments: [],
+  };
+}
+
+export const youtubeOwnedProfileProvider: OwnedSocialProfileProvider = {
+  getAccountSummary: getYouTubeAccountSummary,
+  getRecentPosts: getYouTubeRecentPosts,
+  getAccountAnalytics: getYouTubeAccountAnalytics,
+  getPostDetails: getYouTubePostDetails,
+  refreshAccountSnapshot: refreshYouTubeAccountSnapshot,
+};

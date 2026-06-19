@@ -27,6 +27,16 @@
       "types": "./src/auth/gmail.ts",
       "import": "./src/auth/gmail.ts",
       "default": "./src/auth/gmail.ts"
+    },
+    "./owned-profile/service": {
+      "types": "./src/owned-profile/service.ts",
+      "import": "./src/owned-profile/service.ts",
+      "default": "./src/owned-profile/service.ts"
+    },
+    "./token-refresher": {
+      "types": "./src/token-refresher.ts",
+      "import": "./src/token-refresher.ts",
+      "default": "./src/token-refresher.ts"
     }
   },
   "scripts": {
