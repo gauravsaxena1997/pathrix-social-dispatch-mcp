@@ -7,6 +7,26 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./auth/meta": {
+      "types": "./src/auth/meta.ts",
+      "import": "./src/auth/meta.ts",
+      "default": "./src/auth/meta.ts"
+    },
+    "./auth/youtube": {
+      "types": "./src/auth/youtube.ts",
+      "import": "./src/auth/youtube.ts",
+      "default": "./src/auth/youtube.ts"
+    },
+    "./auth/x": {
+      "types": "./src/auth/x.ts",
+      "import": "./src/auth/x.ts",
+      "default": "./src/auth/x.ts"
+    },
+    "./auth/gmail": {
+      "types": "./src/auth/gmail.ts",
+      "import": "./src/auth/gmail.ts",
+      "default": "./src/auth/gmail.ts"
     }
   },
   "scripts": {
@@ -15,7 +35,7 @@
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "zod": "^3.0.0"
+    "zod": ">=3.0.0 <5.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
