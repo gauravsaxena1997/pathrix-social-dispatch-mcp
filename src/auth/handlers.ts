@@ -3,6 +3,7 @@ import { getMetaAuthorizeUrl, exchangeMetaCode, getLongLivedToken } from "./meta
 import { getYouTubeAuthorizeUrl, exchangeYouTubeCode } from "./youtube";
 import { generatePkce, getXAuthorizeUrl, exchangeXCode } from "./x";
 import { getGmailAuthorizeUrl, exchangeGmailCode } from "./gmail";
+import { getDriveAuthorizeUrl, exchangeDriveCode } from "./drive";
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -87,6 +88,33 @@ export async function handleGmailCallback(
   const redirectUri = `${callbackBase()}/api/social-dispatch/auth/gmail/callback`;
 
   const tok = await exchangeGmailCode(code, redirectUri, clientId, clientSecret);
+  return {
+    access_token: tok.access_token,
+    refresh_token: tok.refresh_token,
+    expires_at: Date.now() + tok.expires_in * 1000,
+  };
+}
+
+// ─── Google Drive ────────────────────────────────────────────────────────────
+
+export function initDriveAuth(): { redirectUrl: string; state: string } {
+  const clientId = requireEnv("GOOGLE_CLIENT_ID");
+  const state = crypto.randomBytes(16).toString("hex");
+  const redirectUri = `${callbackBase()}/api/social-dispatch/auth/drive/callback`;
+  return { redirectUrl: getDriveAuthorizeUrl(state, redirectUri, clientId), state };
+}
+
+export async function handleDriveCallback(
+  code: string,
+  state: string,
+  expectedState: string
+): Promise<{ access_token: string; refresh_token?: string; expires_at: number }> {
+  if (state !== expectedState) throw new Error("state_mismatch");
+  const clientId = requireEnv("GOOGLE_CLIENT_ID");
+  const clientSecret = requireEnv("GOOGLE_CLIENT_SECRET");
+  const redirectUri = `${callbackBase()}/api/social-dispatch/auth/drive/callback`;
+
+  const tok = await exchangeDriveCode(code, redirectUri, clientId, clientSecret);
   return {
     access_token: tok.access_token,
     refresh_token: tok.refresh_token,

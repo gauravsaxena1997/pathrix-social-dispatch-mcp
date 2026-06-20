@@ -21,6 +21,7 @@ export { initMetaAuth, handleMetaCallback } from "./auth/handlers";
 export { initYouTubeAuth, handleYouTubeCallback } from "./auth/handlers";
 export { initXAuth, handleXCallback } from "./auth/handlers";
 export { initGmailAuth, handleGmailCallback } from "./auth/handlers";
+export { initDriveAuth, handleDriveCallback } from "./auth/handlers";
 
 // Adapters
 export { publishSelfPost, publishLinkPost, getUserRecentPosts, checkSelfPromoRatio } from "./adapters/reddit";
@@ -35,6 +36,7 @@ export { getMetaAuthorizeUrl, exchangeMetaCode, getLongLivedToken, refreshLongLi
 export { getYouTubeAuthorizeUrl, exchangeYouTubeCode, refreshYouTubeToken } from "./auth/youtube";
 export { generatePkce, getXAuthorizeUrl, exchangeXCode, refreshXToken } from "./auth/x";
 export { getGmailAuthorizeUrl, exchangeGmailCode, refreshGmailToken } from "./auth/gmail";
+export { getDriveAuthorizeUrl, exchangeDriveCode, refreshDriveToken } from "./auth/drive";
 
 // Instagram automation (comment-to-DM engine + webhook handler)
 export { processCommentEvent } from "./automation/engine";
