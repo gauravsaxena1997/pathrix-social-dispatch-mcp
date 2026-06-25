@@ -23,23 +23,37 @@ interface MetaAccountsResponse {
   }>;
 }
 
-export function getMetaAuthorizeUrl(state: string, redirectUri: string, clientId: string): string {
+export function getMetaAuthorizeUrl(
+  state: string,
+  redirectUri: string,
+  clientId: string,
+  options?: { configId?: string }
+): string {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: [
-      "instagram_basic",
-      "instagram_content_publish",
-      "instagram_manage_comments",
-      "instagram_manage_insights",
-      "pages_manage_metadata",
-      "pages_show_list",
-      "pages_read_engagement",
-      "business_management",
-    ].join(","),
     response_type: "code",
     state,
   });
+
+  const configId = options?.configId?.trim();
+  if (configId) {
+    params.set("config_id", configId);
+  } else {
+    params.set(
+      "scope",
+      [
+        "instagram_basic",
+        "instagram_content_publish",
+        "instagram_manage_comments",
+        "instagram_manage_insights",
+        "instagram_manage_messages",
+        "pages_show_list",
+        "pages_read_engagement",
+        "business_management",
+      ].join(","),
+    );
+  }
   return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
 }
 

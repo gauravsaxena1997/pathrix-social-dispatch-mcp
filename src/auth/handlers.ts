@@ -23,7 +23,8 @@ export function initMetaAuth(): { redirectUrl: string; state: string } {
   const clientId = requireEnv("META_APP_ID");
   const state = crypto.randomBytes(16).toString("hex");
   const redirectUri = `${callbackBase()}/api/social-dispatch/auth/meta/callback`;
-  return { redirectUrl: getMetaAuthorizeUrl(state, redirectUri, clientId), state };
+  const configId = process.env.META_LOGIN_CONFIG_ID?.trim() || "1326467812355174";
+  return { redirectUrl: getMetaAuthorizeUrl(state, redirectUri, clientId, { configId }), state };
 }
 
 export async function handleMetaCallback(
