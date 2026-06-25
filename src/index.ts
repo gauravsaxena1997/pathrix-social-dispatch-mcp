@@ -14,7 +14,14 @@ export type OnEventHook = (e: PackageEvent) => void | Promise<void>;
 export { API_ENDPOINTS, POLL_CONFIG, PLATFORM_LIMITS, DISPATCH_CONFIG } from "./config";
 
 // Token refresh (framework-agnostic, requires PlatformAuthStore)
-export { getValidMetaToken, getValidYouTubeToken, getValidXToken, getValidGmailToken, refreshAllTokens } from "./token-refresher";
+export {
+  getValidMetaAuth,
+  getValidMetaToken,
+  getValidYouTubeToken,
+  getValidXToken,
+  getValidGmailToken,
+  refreshAllTokens,
+} from "./token-refresher";
 
 // Auth handler functions (OAuth init + callback logic)
 export { initMetaAuth, handleMetaCallback } from "./auth/handlers";
@@ -32,7 +39,18 @@ export { uploadYouTubeVideo, pollYouTubeProcessing } from "./adapters/youtube";
 export { publishXTweet, publishXThread, splitIntoThread } from "./adapters/x";
 
 // Auth helpers (low-level OAuth URL generation + code exchange)
-export { getMetaAuthorizeUrl, exchangeMetaCode, getLongLivedToken, refreshLongLivedToken, getIgUserId, getPageId, getThreadsUserId } from "./auth/meta";
+export {
+  getMetaAuthorizeUrl,
+  exchangeMetaCode,
+  getLongLivedToken,
+  refreshLongLivedToken,
+  listMetaPageBindings,
+  resolveMetaPageBinding,
+  getIgUserId,
+  getPageId,
+  subscribeAppToPage,
+  getThreadsUserId,
+} from "./auth/meta";
 export { getYouTubeAuthorizeUrl, exchangeYouTubeCode, refreshYouTubeToken } from "./auth/youtube";
 export { generatePkce, getXAuthorizeUrl, exchangeXCode, refreshXToken } from "./auth/x";
 export { getGmailAuthorizeUrl, exchangeGmailCode, refreshGmailToken } from "./auth/gmail";

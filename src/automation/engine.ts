@@ -1,4 +1,4 @@
-import { getValidMetaToken } from "../token-refresher";
+import { getValidMetaAuth } from "../token-refresher";
 import { getPageId } from "../auth/meta";
 import { replyToIgComment, sendIgDM, likeIgComment } from "../adapters/instagram";
 import type { PlatformAuthStore } from "../schema";
@@ -29,10 +29,14 @@ export async function processCommentEvent(
   );
   if (!matchedRule) return { handled: false };
 
-  const token = await getValidMetaToken("default", deps.authStore);
-  if (!token) throw new Error("ig_no_token: reconnect Instagram in Social Dispatch");
-
-  const { pageId, pageToken } = await getPageId(token);
+  const auth = await getValidMetaAuth("default", deps.authStore);
+  if (!auth) throw new Error("ig_no_token: reconnect Instagram in Social Dispatch");
+  const token = auth.tokens.access_token as string;
+  const { pageId, pageToken } = await getPageId(token, {
+    preferredPageId: typeof auth.tokens.page_id === "string" ? auth.tokens.page_id : undefined,
+    preferredIgUserId: typeof auth.tokens.ig_user_id === "string" ? auth.tokens.ig_user_id : undefined,
+    preferredIgUsername: typeof auth.tokens.ig_username === "string" ? auth.tokens.ig_username : undefined,
+  });
 
   // Like the triggering comment (best-effort, non-critical)
   try {

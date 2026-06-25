@@ -2,7 +2,7 @@ import { refreshLongLivedToken } from "./auth/meta";
 import { refreshYouTubeToken } from "./auth/youtube";
 import { refreshXToken } from "./auth/x";
 import { refreshGmailToken } from "./auth/gmail";
-import type { PlatformAuthStore } from "./schema";
+import type { PlatformAuth, PlatformAuthStore } from "./schema";
 
 const SKEW_MS = 5 * 60 * 1000;
 
@@ -20,10 +20,18 @@ export async function getValidMetaToken(
   accountId: string,
   store: PlatformAuthStore
 ): Promise<string | null> {
+  const auth = await getValidMetaAuth(accountId, store);
+  return auth ? (auth.tokens.access_token as string) : null;
+}
+
+export async function getValidMetaAuth(
+  accountId: string,
+  store: PlatformAuthStore
+): Promise<PlatformAuth | null> {
   const auth = await store.load("instagram", accountId);
   if (!auth) return null;
   const { access_token, expires_at } = auth.tokens as { access_token: string; expires_at: number };
-  if (isTokenValid(expires_at)) return access_token;
+  if (isTokenValid(expires_at)) return auth;
 
   const refreshed = await refreshLongLivedToken(
     access_token,
@@ -31,11 +39,12 @@ export async function getValidMetaToken(
     requireEnv("META_APP_SECRET")
   );
   const newExpiry = Date.now() + refreshed.expires_in * 1000;
-  const tokens = { access_token: refreshed.access_token, expires_at: newExpiry };
-  await store.save({ platform: "instagram", accountId, tokens });
+  const tokens = { ...auth.tokens, access_token: refreshed.access_token, expires_at: newExpiry };
+  const nextAuth = { platform: "instagram" as const, accountId, tokens };
+  await store.save(nextAuth);
   await store.save({ platform: "threads", accountId, tokens });
   await store.save({ platform: "facebook_page", accountId, tokens });
-  return refreshed.access_token;
+  return nextAuth;
 }
 
 export async function getValidYouTubeToken(
