@@ -220,15 +220,44 @@ async function fetchProfileByUserId(
   return (await profileRes.json()) as InstagramProfileResponse;
 }
 
+type InstagramMediaPageResponse = {
+  data?: InstagramMediaResponseItem[];
+  paging?: { next?: string };
+};
+
+async function fetchMediaPage(url: string): Promise<InstagramMediaPageResponse | null> {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) return null;
+  return (await response.json()) as InstagramMediaPageResponse;
+}
+
 async function fetchMedia(
   igUserId: string,
   accessToken: string,
   limit = 25,
 ): Promise<InstagramMediaResponseItem[]> {
-  const mediaJson = await fetchGraphJson<{ data?: InstagramMediaResponseItem[] }>(
-    `/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink&limit=${limit}&access_token=${accessToken}`,
-  );
-  return mediaJson?.data ?? [];
+  const firstUrl = `${GRAPH}/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink&limit=${Math.max(1, Math.min(limit, 100))}&access_token=${accessToken}`;
+
+  const items: InstagramMediaResponseItem[] = [];
+  const seen = new Set<string>();
+  let nextUrl: string | undefined = firstUrl;
+
+  while (nextUrl && items.length < limit) {
+    const page = await fetchMediaPage(nextUrl);
+    if (!page) break;
+
+    for (const item of page.data ?? []) {
+      const id = item.id ?? "";
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      items.push(item);
+      if (items.length >= limit) break;
+    }
+
+    nextUrl = page.paging?.next;
+  }
+
+  return items;
 }
 
 async function fetchPostInsights(
@@ -354,7 +383,7 @@ async function buildInstagramSnapshot(
   accessToken: string,
 ): Promise<OwnedProfileSnapshot> {
   const profile = await fetchProfileByUserId(igUserId, accessToken);
-  const media = await fetchMedia(igUserId, accessToken);
+  const media = await fetchMedia(igUserId, accessToken, Math.max(profile.media_count, 25));
   const postInsights = await fetchRecentPostInsights(media, accessToken);
   const posts = toOwnedProfilePosts(media, postInsights);
 
