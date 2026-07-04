@@ -181,6 +181,17 @@ export interface OwnedSocialAnalytics {
   audienceGenderAge?: Record<string, number>;
   audienceCountry?: Record<string, number>;
   audienceCity?: Record<string, number>;
+  audienceActivity?: {
+    hourly: Record<string, number>;
+    source: "instagram_graph_api" | "unavailable";
+    metric: "online_followers" | "unknown";
+    period: "day" | "unknown";
+    bestHourlyEngagementWindow: {
+      hour: number;
+      label: string;
+      value: number;
+    } | null;
+  };
 }
 
 export interface OwnedSocialComment {
