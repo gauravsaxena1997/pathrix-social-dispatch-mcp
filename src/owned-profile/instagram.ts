@@ -60,6 +60,11 @@ interface InstagramMediaResponseItem {
   media_product_type?: string;
 }
 
+interface InstagramMediaResponse {
+  data?: InstagramMediaResponseItem[];
+  paging?: { next?: string };
+}
+
 interface InstagramInsightDataPoint {
   name: string;
   value?: number;
@@ -68,7 +73,7 @@ interface InstagramInsightDataPoint {
 
 interface InstagramAudienceDataPoint {
   name: string;
-  values?: Array<{ value: Record<string, number> }>;
+  values?: Array<{ value: Record<string, number> | number }>;
 }
 
 interface InstagramComment {
@@ -184,7 +189,29 @@ function parseRecordMetric(raw: number | string | undefined): Record<string, num
   }
 }
 
+function buildBestHourlyEngagementWindow(hourly: Record<string, number>) {
+  const bestHour = Object.entries(hourly)
+    .map(([hour, value]) => ({ hour: Number(hour), value }))
+    .filter((entry) => Number.isFinite(entry.hour) && Number.isFinite(entry.value))
+    .sort((a, b) => b.value - a.value || a.hour - b.hour)[0];
+
+  if (!bestHour) return null;
+
+  return {
+    hour: bestHour.hour,
+    label: `${String(bestHour.hour).padStart(2, "0")}:00-${String((bestHour.hour + 1) % 24).padStart(2, "0")}:00`,
+    value: bestHour.value,
+  };
+}
+
 function toAnalytics(snapshot: OwnedProfileSnapshot): OwnedSocialAnalytics {
+  const audienceActivityHourly = parseRecordMetric(
+    typeof snapshot.stats.audience_activity_hourly === "string"
+      ? snapshot.stats.audience_activity_hourly
+      : undefined,
+  );
+  const bestHourlyEngagementWindow = buildBestHourlyEngagementWindow(audienceActivityHourly);
+
   return {
     platform: "instagram",
     handle: snapshot.handle,
@@ -203,6 +230,13 @@ function toAnalytics(snapshot: OwnedProfileSnapshot): OwnedSocialAnalytics {
     audienceCity: parseRecordMetric(
       typeof snapshot.stats.audience_city === "string" ? snapshot.stats.audience_city : undefined,
     ),
+    audienceActivity: {
+      hourly: audienceActivityHourly,
+      source: Object.keys(audienceActivityHourly).length > 0 ? "instagram_graph_api" : "unavailable",
+      metric: Object.keys(audienceActivityHourly).length > 0 ? "online_followers" : "unknown",
+      period: Object.keys(audienceActivityHourly).length > 0 ? "day" : "unknown",
+      bestHourlyEngagementWindow,
+    },
   };
 }
 
@@ -225,10 +259,22 @@ async function fetchMedia(
   accessToken: string,
   limit = 25,
 ): Promise<InstagramMediaResponseItem[]> {
-  const mediaJson = await fetchGraphJson<{ data?: InstagramMediaResponseItem[] }>(
-    `/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink&limit=${limit}&access_token=${accessToken}`,
+  const firstPage = await fetchGraphJson<InstagramMediaResponse>(
+    `/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink&limit=25&access_token=${accessToken}`,
   );
-  return mediaJson?.data ?? [];
+
+  const items: InstagramMediaResponseItem[] = [...(firstPage?.data ?? [])];
+  let nextUrl = firstPage?.paging?.next ?? null;
+
+  while (nextUrl && items.length < limit) {
+    const response = await fetch(nextUrl, { cache: "no-store" });
+    if (!response.ok) break;
+    const mediaJson = (await response.json()) as InstagramMediaResponse;
+    items.push(...(mediaJson.data ?? []));
+    nextUrl = mediaJson.paging?.next ?? null;
+  }
+
+  return items.slice(0, limit);
 }
 
 async function fetchPostInsights(
@@ -330,23 +376,41 @@ async function fetchAudienceAnalytics(
   audienceGenderAge: Record<string, number>;
   audienceCountry: Record<string, number>;
   audienceCity: Record<string, number>;
+  audienceActivityHourly: Record<string, number>;
 }> {
-  const payload = await fetchGraphJson<{ data?: InstagramAudienceDataPoint[] }>(
-    `/${igUserId}/insights?metric=audience_gender_age,audience_country,audience_city&period=lifetime&access_token=${accessToken}`,
-  );
+  const [lifetimePayload, hourlyPayload] = await Promise.all([
+    fetchGraphJson<{ data?: InstagramAudienceDataPoint[] }>(
+      `/${igUserId}/insights?metric=audience_gender_age,audience_country,audience_city&period=lifetime&access_token=${accessToken}`,
+    ),
+    fetchGraphJson<{ data?: InstagramAudienceDataPoint[] }>(
+      `/${igUserId}/insights?metric=online_followers&period=day&access_token=${accessToken}`,
+    ),
+  ]);
 
   let audienceGenderAge: Record<string, number> = {};
   let audienceCountry: Record<string, number> = {};
   let audienceCity: Record<string, number> = {};
+  let audienceActivityHourly: Record<string, number> = {};
 
-  for (const metric of payload?.data ?? []) {
-    const value = metric.values?.[0]?.value ?? {};
-    if (metric.name === "audience_gender_age") audienceGenderAge = value;
-    if (metric.name === "audience_country") audienceCountry = value;
-    if (metric.name === "audience_city") audienceCity = value;
+  for (const metric of lifetimePayload?.data ?? []) {
+    const value = metric.values?.[0]?.value;
+    if (!value || typeof value === "number") continue;
+    if (metric.name === "audience_gender_age") audienceGenderAge = value as Record<string, number>;
+    if (metric.name === "audience_country") audienceCountry = value as Record<string, number>;
+    if (metric.name === "audience_city") audienceCity = value as Record<string, number>;
   }
 
-  return { audienceGenderAge, audienceCountry, audienceCity };
+  for (const metric of hourlyPayload?.data ?? []) {
+    if (metric.name !== "online_followers") continue;
+    audienceActivityHourly = (metric.values ?? []).reduce<Record<string, number>>((acc, entry, index) => {
+      if (typeof entry.value === "number") {
+        acc[String(index)] = entry.value;
+      }
+      return acc;
+    }, {});
+  }
+
+  return { audienceGenderAge, audienceCountry, audienceCity, audienceActivityHourly };
 }
 
 async function buildInstagramSnapshot(
@@ -358,19 +422,22 @@ async function buildInstagramSnapshot(
   const postInsights = await fetchRecentPostInsights(media, accessToken);
   const posts = toOwnedProfilePosts(media, postInsights);
 
-  const [{ reach7d, impressions7d, profileViews7d }, { audienceGenderAge, audienceCountry, audienceCity }] =
-    await Promise.all([
-      fetchSevenDayAnalytics(igUserId, accessToken).catch(() => ({
-        reach7d: 0,
-        impressions7d: 0,
-        profileViews7d: 0,
-      })),
-      fetchAudienceAnalytics(igUserId, accessToken).catch(() => ({
-        audienceGenderAge: {},
-        audienceCountry: {},
-        audienceCity: {},
-      })),
-    ]);
+  const [
+    { reach7d, impressions7d, profileViews7d },
+    { audienceGenderAge, audienceCountry, audienceCity, audienceActivityHourly },
+  ] = await Promise.all([
+    fetchSevenDayAnalytics(igUserId, accessToken).catch(() => ({
+      reach7d: 0,
+      impressions7d: 0,
+      profileViews7d: 0,
+    })),
+    fetchAudienceAnalytics(igUserId, accessToken).catch(() => ({
+      audienceGenderAge: {},
+      audienceCountry: {},
+      audienceCity: {},
+      audienceActivityHourly: {},
+    })),
+  ]);
 
   return {
     platform: "instagram",
@@ -392,6 +459,7 @@ async function buildInstagramSnapshot(
       audience_gender_age: JSON.stringify(audienceGenderAge),
       audience_country: JSON.stringify(audienceCountry),
       audience_city: JSON.stringify(audienceCity),
+      audience_activity_hourly: JSON.stringify(audienceActivityHourly),
     },
   };
 }
