@@ -418,7 +418,7 @@ async function buildInstagramSnapshot(
   accessToken: string,
 ): Promise<OwnedProfileSnapshot> {
   const profile = await fetchProfileByUserId(igUserId, accessToken);
-  const media = await fetchMedia(igUserId, accessToken);
+  const media = await fetchMedia(igUserId, accessToken, profile.media_count);
   const postInsights = await fetchRecentPostInsights(media, accessToken);
   const posts = toOwnedProfilePosts(media, postInsights);
 
