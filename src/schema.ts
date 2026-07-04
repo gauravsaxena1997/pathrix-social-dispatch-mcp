@@ -173,6 +173,33 @@ export interface OwnedSocialAccountSummary {
   website?: string;
 }
 
+export interface OwnedSocialAudienceActivity {
+  hourly: Record<string, number>;
+  source: string;
+  metric: string;
+  period: string;
+  bestHourlyEngagementWindow: {
+    hour: number;
+    label: string;
+    value: number;
+  } | null;
+}
+
+export interface OwnedSocialEngagementWindow {
+  priority: 1 | 2 | 3;
+  startHour: number;
+  endHour: number;
+  label: string;
+  score: number;
+  hourlyBreakdown: Array<{
+    hour: number;
+    label: string;
+    value: number;
+  }>;
+  recommendedPublishHour: number;
+  recommendedPublishLabel: string;
+}
+
 export interface OwnedSocialAnalytics {
   platform: OwnedSocialPlatform;
   handle: string;
@@ -181,17 +208,7 @@ export interface OwnedSocialAnalytics {
   audienceGenderAge?: Record<string, number>;
   audienceCountry?: Record<string, number>;
   audienceCity?: Record<string, number>;
-  audienceActivity?: {
-    hourly: Record<string, number>;
-    source: "instagram_graph_api" | "unavailable";
-    metric: "online_followers" | "unknown";
-    period: "day" | "unknown";
-    bestHourlyEngagementWindow: {
-      hour: number;
-      label: string;
-      value: number;
-    } | null;
-  };
+  audienceActivity?: OwnedSocialAudienceActivity;
 }
 
 export interface OwnedSocialComment {

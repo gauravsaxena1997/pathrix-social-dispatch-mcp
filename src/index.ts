@@ -105,6 +105,8 @@ export type {
   OwnedSocialPostDetailsInput,
   OwnedSocialAccountSummary,
   OwnedSocialAnalytics,
+  OwnedSocialAudienceActivity,
+  OwnedSocialEngagementWindow,
   OwnedSocialComment,
   OwnedSocialPostDetails,
   OwnedSocialProfileProvider,

@@ -4,6 +4,7 @@ import type {
   OwnedSocialAccountInput,
   OwnedSocialAccountSummary,
   OwnedSocialAnalytics,
+  OwnedSocialAudienceActivity,
   OwnedSocialComment,
   OwnedSocialPostDetails,
   OwnedSocialPostDetailsInput,
@@ -60,9 +61,11 @@ interface InstagramMediaResponseItem {
   media_product_type?: string;
 }
 
-interface InstagramMediaResponse {
+interface InstagramMediaPage {
   data?: InstagramMediaResponseItem[];
-  paging?: { next?: string };
+  paging?: {
+    next?: string;
+  };
 }
 
 interface InstagramInsightDataPoint {
@@ -164,6 +167,12 @@ async function fetchGraphJson<T>(path: string): Promise<T | null> {
   return (await response.json()) as T;
 }
 
+async function fetchGraphUrlJson<T>(url: string): Promise<T | null> {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) return null;
+  return (await response.json()) as T;
+}
+
 function toAccountSummary(snapshot: OwnedProfileSnapshot): OwnedSocialAccountSummary {
   return {
     platform: "instagram",
@@ -189,28 +198,31 @@ function parseRecordMetric(raw: number | string | undefined): Record<string, num
   }
 }
 
-function buildBestHourlyEngagementWindow(hourly: Record<string, number>) {
+function buildAudienceActivity(hourly: Record<string, number>): OwnedSocialAudienceActivity {
   const bestHour = Object.entries(hourly)
     .map(([hour, value]) => ({ hour: Number(hour), value }))
-    .filter((entry) => Number.isFinite(entry.hour) && Number.isFinite(entry.value))
+    .filter((entry) => Number.isFinite(entry.hour))
     .sort((a, b) => b.value - a.value || a.hour - b.hour)[0];
 
-  if (!bestHour) return null;
-
   return {
-    hour: bestHour.hour,
-    label: `${String(bestHour.hour).padStart(2, "0")}:00-${String((bestHour.hour + 1) % 24).padStart(2, "0")}:00`,
-    value: bestHour.value,
+    hourly,
+    source: Object.keys(hourly).length > 0 ? "instagram_graph_api" : "unavailable",
+    metric: Object.keys(hourly).length > 0 ? "online_followers" : "unknown",
+    period: Object.keys(hourly).length > 0 ? "day" : "unknown",
+    bestHourlyEngagementWindow: bestHour
+      ? {
+          hour: bestHour.hour,
+          label: `${String(bestHour.hour).padStart(2, "0")}:00-${String((bestHour.hour + 1) % 24).padStart(2, "0")}:00`,
+          value: bestHour.value,
+        }
+      : null,
   };
 }
 
 function toAnalytics(snapshot: OwnedProfileSnapshot): OwnedSocialAnalytics {
   const audienceActivityHourly = parseRecordMetric(
-    typeof snapshot.stats.audience_activity_hourly === "string"
-      ? snapshot.stats.audience_activity_hourly
-      : undefined,
+    typeof snapshot.stats.audience_activity_hourly === "string" ? snapshot.stats.audience_activity_hourly : undefined,
   );
-  const bestHourlyEngagementWindow = buildBestHourlyEngagementWindow(audienceActivityHourly);
 
   return {
     platform: "instagram",
@@ -230,13 +242,7 @@ function toAnalytics(snapshot: OwnedProfileSnapshot): OwnedSocialAnalytics {
     audienceCity: parseRecordMetric(
       typeof snapshot.stats.audience_city === "string" ? snapshot.stats.audience_city : undefined,
     ),
-    audienceActivity: {
-      hourly: audienceActivityHourly,
-      source: Object.keys(audienceActivityHourly).length > 0 ? "instagram_graph_api" : "unavailable",
-      metric: Object.keys(audienceActivityHourly).length > 0 ? "online_followers" : "unknown",
-      period: Object.keys(audienceActivityHourly).length > 0 ? "day" : "unknown",
-      bestHourlyEngagementWindow,
-    },
+    audienceActivity: buildAudienceActivity(audienceActivityHourly),
   };
 }
 
@@ -254,17 +260,6 @@ async function fetchProfileByUserId(
   return (await profileRes.json()) as InstagramProfileResponse;
 }
 
-type InstagramMediaPageResponse = {
-  data?: InstagramMediaResponseItem[];
-  paging?: { next?: string };
-};
-
-async function fetchMediaPage(url: string): Promise<InstagramMediaPageResponse | null> {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) return null;
-  return (await response.json()) as InstagramMediaPageResponse;
-}
-
 async function fetchMedia(
   igUserId: string,
   accessToken: string,
@@ -277,7 +272,7 @@ async function fetchMedia(
   let nextUrl: string | undefined = firstUrl;
 
   while (nextUrl && items.length < limit) {
-    const page = await fetchMediaPage(nextUrl);
+    const page: InstagramMediaPage | null = await fetchGraphUrlJson<InstagramMediaPage>(nextUrl);
     if (!page) break;
 
     for (const item of page.data ?? []) {
@@ -316,13 +311,22 @@ async function fetchRecentPostInsights(
   accessToken: string,
 ): Promise<Record<string, InstagramPostInsights>> {
   const postInsights: Record<string, InstagramPostInsights> = {};
+  const validMedia = media.filter((item) => Boolean(item.id));
+  const batchSize = 5;
 
-  for (const item of media) {
-    const id = item.id ?? "";
-    if (!id) continue;
+  for (let index = 0; index < validMedia.length; index += batchSize) {
+    const batch = validMedia.slice(index, index + batchSize);
+    const results = await Promise.all(
+      batch.map(async (item) => ({
+        id: item.id ?? "",
+        insights: await fetchPostInsights(item.id ?? "", item.media_type ?? "IMAGE", accessToken),
+      })),
+    );
 
-    postInsights[id] = await fetchPostInsights(id, item.media_type ?? "IMAGE", accessToken);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    for (const result of results) {
+      if (!result.id) continue;
+      postInsights[result.id] = result.insights;
+    }
   }
 
   return postInsights;
@@ -399,6 +403,10 @@ async function fetchAudienceAnalytics(
     fetchGraphJson<{ data?: InstagramAudienceDataPoint[] }>(
       `/${igUserId}/insights?metric=audience_gender_age,audience_country,audience_city&period=lifetime&access_token=${accessToken}`,
     ),
+    // Meta only exposes online_followers for eligible Instagram business/creator accounts.
+    // This account is currently below the follower threshold, so the endpoint returns no usable
+    // hourly series. Keep probing this path on refreshes, and once the account crosses 100
+    // followers we should expect online_followers to become available again.
     fetchGraphJson<{ data?: InstagramAudienceDataPoint[] }>(
       `/${igUserId}/insights?metric=online_followers&period=day&access_token=${accessToken}`,
     ),
