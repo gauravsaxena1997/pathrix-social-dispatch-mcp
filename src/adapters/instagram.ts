@@ -110,11 +110,62 @@ export async function sendIgDM(
   message: string,
   pageAccessToken: string
 ): Promise<void> {
+  await sendIgMessage(pageId, { commentId }, message, pageAccessToken);
+}
+
+export async function sendIgMessage(
+  pageId: string,
+  recipient: { id?: string; commentId?: string },
+  message: string | { text: string; quickReplies?: Array<{ title: string; payload: string }> },
+  pageAccessToken: string
+): Promise<void> {
+  const recipientPayload = recipient.commentId
+    ? { comment_id: recipient.commentId }
+    : { id: recipient.id };
   await graphPost(`${pageId}/messages`, {
-    recipient: { comment_id: commentId },
-    message: { text: message },
+    recipient: recipientPayload,
+    message: typeof message === "string"
+      ? { text: message }
+      : {
+          text: message.text,
+          ...(message.quickReplies?.length
+            ? {
+                quick_replies: message.quickReplies.map((quickReply) => ({
+                  content_type: "text",
+                  title: quickReply.title,
+                  payload: quickReply.payload,
+                })),
+              }
+            : {}),
+        },
     access_token: pageAccessToken,
   });
+}
+
+export async function sendIgQuickReply(
+  pageId: string,
+  recipient: { id?: string; commentId?: string },
+  text: string,
+  title: string,
+  payload: string,
+  pageAccessToken: string,
+): Promise<void> {
+  await sendIgMessage(pageId, recipient, { text, quickReplies: [{ title, payload }] }, pageAccessToken);
+}
+
+export async function getInstagramUserFollowStatus(
+  senderId: string,
+  pageAccessToken: string,
+): Promise<boolean> {
+  const res = await fetch(
+    `${GRAPH}/${senderId}?fields=is_user_follow_business&access_token=${pageAccessToken}`,
+    { cache: "no-store" },
+  );
+  const json = await res.json() as { is_user_follow_business?: boolean; error?: { message?: string } };
+  if (!res.ok || json.error || typeof json.is_user_follow_business !== "boolean") {
+    throw new Error(`ig_follow_status_${res.status}: ${json.error?.message ?? "missing follow status"}`);
+  }
+  return json.is_user_follow_business;
 }
 
 export async function likeIgComment(

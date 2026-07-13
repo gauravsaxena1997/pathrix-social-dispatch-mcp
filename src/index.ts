@@ -59,7 +59,25 @@ export { getDriveAuthorizeUrl, exchangeDriveCode, refreshDriveToken } from "./au
 // Instagram automation (comment-to-DM engine + webhook handler)
 export { processCommentEvent } from "./automation/engine";
 export { verifyInstagramChallenge, processInstagramWebhookPayload } from "./webhooks/instagram";
+export {
+  CommentAutomationAction,
+  CommentAutomationEventStatus,
+  FollowGateFlowStatus,
+  type CommentAutomationAction as CommentAutomationActionType,
+  type CommentAutomationEventStatus as CommentAutomationEventStatusType,
+  type FollowGateFlowStatus as FollowGateFlowStatusType,
+  DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE,
+  DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+  FOLLOW_GATE_RECHECK_PREFIX,
+} from "./automation/constants";
 export type { CommentAutomationRule, AutomationRuleStore } from "./automation/types";
+export type {
+  FollowGateFlow,
+  FollowGateFlowStore,
+  CommentAutomationEventInput,
+  CommentAutomationEventOutcomeInput,
+  CommentAutomationLedgerStore,
+} from "./automation/types";
 export type { CommentEventDeps } from "./automation/engine";
 export type { InstagramWebhookDeps, InstagramWebhookResult } from "./webhooks/instagram";
 
