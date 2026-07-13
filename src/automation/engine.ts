@@ -112,6 +112,10 @@ export async function processCommentEvent(
     throw new Error(`ig_missing_resource: rule ${matchedRule.id} has no resource DM`);
   }
 
+  const publicReplyPool = matchedRule.replyPool.length
+    ? matchedRule.replyPool
+    : await deps.ruleStore.getGlobalReplyPool?.() ?? [];
+
   const { token, pageId, pageToken } = await resolvePageAuth(deps.authStore);
 
   try {
@@ -157,13 +161,13 @@ export async function processCommentEvent(
       `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
       pageToken,
     );
-    const publicReply = pickRandom(matchedRule.replyPool);
+    const publicReply = pickRandom(publicReplyPool);
     if (publicReply) await replyToIgComment(commentId, publicReply, token);
     return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_SENT, matchedRuleId: matchedRule.id };
   }
 
   await sendIgDM(pageId, commentId, matchedRule.dmTemplate, pageToken);
-  const publicReply = pickRandom(matchedRule.replyPool);
+  const publicReply = pickRandom(publicReplyPool);
   if (publicReply) await replyToIgComment(commentId, publicReply, token);
 
   return {
