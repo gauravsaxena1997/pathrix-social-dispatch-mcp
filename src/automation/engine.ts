@@ -158,7 +158,7 @@ export async function processCommentEvent(
       { commentId, mediaId, senderId: fromId },
       matchedRule.id,
       matchedRule.dmTemplate,
-      matchedRule.followGateRetryTemplate || DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+      DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
       deps.flowStore,
     );
     let followsBusiness = false;
@@ -184,7 +184,7 @@ export async function processCommentEvent(
     await sendIgQuickReply(
       pageId,
       { commentId },
-      matchedRule.followGateInitialTemplate || DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE,
+      DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE,
       FOLLOW_GATE_BUTTON_TITLE,
       `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
       pageToken,
@@ -252,7 +252,7 @@ export async function processDirectMessageEvent(
   await sendIgQuickReply(
     pageId,
     { id: event.senderId },
-    flow.followGateRetryTemplate || DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+    DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
     FOLLOW_GATE_BUTTON_TITLE,
     `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
     pageToken,
