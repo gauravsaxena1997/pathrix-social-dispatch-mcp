@@ -8,6 +8,7 @@ export interface CommentAutomationRule {
   id: string;
   /** "any" matches all posts; otherwise must equal the mediaId */
   postId: string;
+  triggerMode: "KEYWORDS" | "ANY_COMMENT";
   keywords: string[];
   replyPool: string[];
   dmTemplate: string;

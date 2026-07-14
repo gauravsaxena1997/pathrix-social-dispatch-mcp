@@ -27,6 +27,19 @@ function pickRandom(arr: string[]): string | undefined {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function normalizeInstagramUsername(username: string): string {
+  return username.replace(/^@+/, "").trim().match(/^[A-Za-z0-9._]+$/)?.[0] ?? "";
+}
+
+function formatPublicReplyForCommenter(reply: string, fromUsername: string): string {
+  const username = normalizeInstagramUsername(fromUsername);
+  if (!username) return reply;
+  const mention = `@${username}`;
+  return reply.trim().toLowerCase().startsWith(mention.toLowerCase())
+    ? reply
+    : `${mention} ${reply}`;
+}
+
 function createFlowToken(): string {
   return randomBytes(24).toString("base64url");
 }
@@ -99,14 +112,15 @@ export async function processCommentEvent(
   },
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
-  const { commentId, mediaId, commentText, fromId } = event;
+  const { commentId, mediaId, commentText, fromId, fromUsername } = event;
   const rules = await deps.ruleStore.getActiveRulesForPost(mediaId);
   if (!rules.length) return { handled: false };
 
   const lowerText = commentText.toLowerCase().trim();
-  const matchedRule = rules.find((rule) =>
-    rule.keywords.some((keyword) => lowerText.includes(keyword.toLowerCase())),
-  );
+  const matchedRule = rules.find((rule) => {
+    if (rule.triggerMode === "ANY_COMMENT") return lowerText.length > 0;
+    return rule.keywords.some((keyword) => lowerText.includes(keyword.toLowerCase()));
+  });
   if (!matchedRule) return { handled: false };
   if (!matchedRule.dmTemplate.trim()) {
     throw new Error(`ig_missing_resource: rule ${matchedRule.id} has no resource DM`);
@@ -162,13 +176,13 @@ export async function processCommentEvent(
       pageToken,
     );
     const publicReply = pickRandom(publicReplyPool);
-    if (publicReply) await replyToIgComment(commentId, publicReply, token);
+    if (publicReply) await replyToIgComment(commentId, formatPublicReplyForCommenter(publicReply, fromUsername), token);
     return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_SENT, matchedRuleId: matchedRule.id };
   }
 
   await sendIgDM(pageId, commentId, matchedRule.dmTemplate, pageToken);
   const publicReply = pickRandom(publicReplyPool);
-  if (publicReply) await replyToIgComment(commentId, publicReply, token);
+  if (publicReply) await replyToIgComment(commentId, formatPublicReplyForCommenter(publicReply, fromUsername), token);
 
   return {
     handled: true,
