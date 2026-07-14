@@ -73,6 +73,14 @@ async function resolvePageAuth(authStore: PlatformAuthStore) {
   return { token, ...binding };
 }
 
+async function resolveFollowGateTemplates(ruleStore: AutomationRuleStore) {
+  const templates = await ruleStore.getGlobalFollowGateTemplates?.();
+  return {
+    initialTemplate: templates?.initialTemplate?.trim() || DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE,
+    retryTemplate: templates?.retryTemplate?.trim() || DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+  };
+}
+
 async function createFollowGateFlow(
   event: { commentId: string; mediaId: string; senderId: string },
   ruleId: string,
@@ -154,11 +162,12 @@ export async function processCommentEvent(
     if (!fromId) throw new Error("ig_missing_sender_id: follow gate requires an Instagram-scoped sender id");
     if (!deps.flowStore) throw new Error("ig_missing_flow_store: follow gate flow storage is not configured");
 
+    const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
     const flow = await createFollowGateFlow(
       { commentId, mediaId, senderId: fromId },
       matchedRule.id,
       matchedRule.dmTemplate,
-      DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+      followGateTemplates.retryTemplate,
       deps.flowStore,
     );
     let followsBusiness = false;
@@ -184,7 +193,7 @@ export async function processCommentEvent(
     await sendIgQuickReply(
       pageId,
       { commentId },
-      DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE,
+      followGateTemplates.initialTemplate,
       FOLLOW_GATE_BUTTON_TITLE,
       `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
       pageToken,
@@ -231,6 +240,7 @@ export async function processDirectMessageEvent(
   if (!flow || flow.senderId !== event.senderId || flow.status !== "PENDING" || flow.expiresAt.getTime() <= Date.now()) {
     return { handled: false };
   }
+  const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
 
   const { pageId, pageToken } = await resolvePageAuth(deps.authStore);
   let followsBusiness = false;
@@ -252,7 +262,7 @@ export async function processDirectMessageEvent(
   await sendIgQuickReply(
     pageId,
     { id: event.senderId },
-    DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+    followGateTemplates.retryTemplate,
     FOLLOW_GATE_BUTTON_TITLE,
     `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
     pageToken,

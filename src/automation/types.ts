@@ -22,6 +22,10 @@ export interface CommentAutomationRule {
 export interface AutomationRuleStore {
   getActiveRulesForPost(mediaId: string): Promise<CommentAutomationRule[]>;
   getGlobalReplyPool?(): Promise<string[]>;
+  getGlobalFollowGateTemplates?(): Promise<{
+    initialTemplate: string;
+    retryTemplate: string;
+  }>;
 }
 
 export interface FollowGateFlow {
