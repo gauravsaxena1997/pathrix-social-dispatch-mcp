@@ -40,6 +40,15 @@ function formatPublicReplyForCommenter(reply: string, fromUsername: string): str
     : `${mention} ${reply}`;
 }
 
+function normalizeKeywordMatchText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function createFlowToken(): string {
   return randomBytes(24).toString("base64url");
 }
@@ -116,10 +125,13 @@ export async function processCommentEvent(
   const rules = await deps.ruleStore.getActiveRulesForPost(mediaId);
   if (!rules.length) return { handled: false };
 
-  const lowerText = commentText.toLowerCase().trim();
+  const normalizedText = normalizeKeywordMatchText(commentText);
   const matchedRule = rules.find((rule) => {
-    if (rule.triggerMode === "ANY_COMMENT") return lowerText.length > 0;
-    return rule.keywords.some((keyword) => lowerText.includes(keyword.toLowerCase()));
+    if (rule.triggerMode === "ANY_COMMENT") return normalizedText.length > 0;
+    return rule.keywords.some((keyword) => {
+      const normalizedKeyword = normalizeKeywordMatchText(keyword);
+      return normalizedKeyword.length > 0 && normalizedText.includes(normalizedKeyword);
+    });
   });
   if (!matchedRule) return { handled: false };
   if (!matchedRule.dmTemplate.trim()) {
