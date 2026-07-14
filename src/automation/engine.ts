@@ -21,6 +21,7 @@ import type { PlatformAuthStore } from "../schema";
 
 const FOLLOW_GATE_BUTTON_TITLE = "I follow";
 const FOLLOW_GATE_FLOW_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_GLOBAL_COMMENT_KEYWORDS = ["link", "resource"];
 
 function pickRandom(arr: string[]): string | undefined {
   if (!arr.length) return undefined;
@@ -81,6 +82,14 @@ async function resolveFollowGateTemplates(ruleStore: AutomationRuleStore) {
   };
 }
 
+async function resolveGlobalDefaultKeywords(ruleStore: AutomationRuleStore): Promise<string[]> {
+  const configuredKeywords = await ruleStore.getGlobalDefaultKeywords?.();
+  const keywords = configuredKeywords?.length ? configuredKeywords : DEFAULT_GLOBAL_COMMENT_KEYWORDS;
+  return keywords
+    .map((keyword) => normalizeKeywordMatchText(keyword))
+    .filter((keyword, index, arr) => keyword.length > 0 && arr.indexOf(keyword) === index);
+}
+
 async function createFollowGateFlow(
   event: { commentId: string; mediaId: string; senderId: string },
   ruleId: string,
@@ -134,9 +143,11 @@ export async function processCommentEvent(
   if (!rules.length) return { handled: false };
 
   const normalizedText = normalizeKeywordMatchText(commentText);
+  const globalDefaultKeywords = await resolveGlobalDefaultKeywords(deps.ruleStore);
   const matchedRule = rules.find((rule) => {
     if (rule.triggerMode === "ANY_COMMENT") return normalizedText.length > 0;
-    return rule.keywords.some((keyword) => {
+    const effectiveKeywords = [...rule.keywords, ...globalDefaultKeywords];
+    return effectiveKeywords.some((keyword) => {
       const normalizedKeyword = normalizeKeywordMatchText(keyword);
       return normalizedKeyword.length > 0 && normalizedText.includes(normalizedKeyword);
     });
@@ -240,8 +251,8 @@ export async function processDirectMessageEvent(
   if (!flow || flow.senderId !== event.senderId || flow.status !== "PENDING" || flow.expiresAt.getTime() <= Date.now()) {
     return { handled: false };
   }
-  const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
 
+  const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
   const { pageId, pageToken } = await resolvePageAuth(deps.authStore);
   let followsBusiness = false;
   try {

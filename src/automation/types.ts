@@ -21,6 +21,7 @@ export interface CommentAutomationRule {
 /** Implemented by the host application (CarrierOS) using Prisma */
 export interface AutomationRuleStore {
   getActiveRulesForPost(mediaId: string): Promise<CommentAutomationRule[]>;
+  getGlobalDefaultKeywords?(): Promise<string[]>;
   getGlobalReplyPool?(): Promise<string[]>;
   getGlobalFollowGateTemplates?(): Promise<{
     initialTemplate: string;
