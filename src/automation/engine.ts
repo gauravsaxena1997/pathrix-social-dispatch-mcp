@@ -172,6 +172,8 @@ export async function processCommentEvent(
 
     if (followsBusiness) {
       const delivered = await deliverFlowResource(pageId, { commentId }, flow, pageToken, deps.flowStore);
+      const publicReply = pickRandom(publicReplyPool);
+      if (publicReply) await replyToIgComment(commentId, formatPublicReplyForCommenter(publicReply, fromUsername), token);
       return {
         handled: true,
         action: delivered ? CommentAutomationAction.DM_SENT : CommentAutomationAction.NONE,
