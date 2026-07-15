@@ -64,6 +64,7 @@ export interface CommentEventDeps {
   ruleStore: AutomationRuleStore;
   flowStore?: FollowGateFlowStore;
   transport?: InstagramAutomationTransport;
+  provider?: "META" | "ZERNIO";
 }
 
 async function resolvePageAuth(authStore: PlatformAuthStore) {
@@ -171,8 +172,9 @@ export async function processCommentEvent(
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
   const { commentId, mediaId, commentText, fromId, fromUsername } = event;
+  const provider = deps.provider ?? (deps.transport ? "ZERNIO" : "META");
   const rules = (await deps.ruleStore.getActiveRulesForPost(mediaId)).filter((rule) =>
-    deps.transport ? (rule.transportProvider ?? "META") === "ZERNIO" : true,
+    (rule.transportProvider ?? "META") === provider,
   );
   if (!rules.length) return { handled: false };
 
