@@ -237,7 +237,8 @@ export async function processCommentEvent(
         postId: mediaId,
         commentId,
         message: followGateTemplates.initialTemplate,
-        quickReplies: [{
+        buttons: [{
+          type: "postback",
           title: FOLLOW_GATE_BUTTON_TITLE,
           payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
         }],
@@ -375,7 +376,7 @@ export async function processDirectMessageEvent(
       await deps.flowStore.expire?.(flow.token);
       return { handled: true, action: CommentAutomationAction.NONE, matchedRuleId: flow.ruleId };
     }
-    await deps.transport.sendConversationQuickReply({
+    await deps.transport.sendConversationButton({
       conversationId: event.conversationId,
       message: followGateTemplates.retryTemplate,
       title: FOLLOW_GATE_BUTTON_TITLE,

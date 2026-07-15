@@ -41,13 +41,13 @@ export interface InstagramAutomationTransport {
     postId: string;
     commentId: string;
     message: string;
-    quickReplies?: Array<{ title: string; payload: string }>;
+    buttons?: Array<{ type: "postback"; title: string; payload: string }>;
   }): Promise<void>;
   sendConversationMessage(input: {
     conversationId: string;
     message: string;
   }): Promise<void>;
-  sendConversationQuickReply(input: {
+  sendConversationButton(input: {
     conversationId: string;
     message: string;
     title: string;
