@@ -15,7 +15,12 @@ import {
   sendIgMessage,
   sendIgQuickReply,
 } from "../adapters/instagram";
-import type { AutomationRuleStore, FollowGateFlow, FollowGateFlowStore } from "./types";
+import type {
+  AutomationRuleStore,
+  FollowGateFlow,
+  FollowGateFlowStore,
+  InstagramAutomationTransport,
+} from "./types";
 import type { CommentAutomationAction as CommentAutomationActionType } from "./constants";
 import type { PlatformAuthStore } from "../schema";
 
@@ -58,6 +63,7 @@ export interface CommentEventDeps {
   authStore: PlatformAuthStore;
   ruleStore: AutomationRuleStore;
   flowStore?: FollowGateFlowStore;
+  transport?: InstagramAutomationTransport;
 }
 
 async function resolvePageAuth(authStore: PlatformAuthStore) {
@@ -91,7 +97,7 @@ async function resolveGlobalDefaultKeywords(ruleStore: AutomationRuleStore): Pro
 }
 
 async function createFollowGateFlow(
-  event: { commentId: string; mediaId: string; senderId: string },
+  event: { commentId: string; mediaId: string; senderId: string; conversationId?: string },
   ruleId: string,
   resourceDmText: string,
   followGateRetryTemplate: string,
@@ -102,11 +108,37 @@ async function createFollowGateFlow(
     senderId: event.senderId,
     commentId: event.commentId,
     mediaId: event.mediaId,
+    conversationId: event.conversationId,
     ruleId,
     resourceDmText,
     followGateRetryTemplate,
     expiresAt: new Date(Date.now() + FOLLOW_GATE_FLOW_TTL_MS),
   });
+}
+
+async function deliverTransportResource(
+  flow: FollowGateFlow,
+  transport: InstagramAutomationTransport,
+  flowStore: FollowGateFlowStore,
+  conversationIdOverride?: string,
+): Promise<boolean> {
+  const claimed = await flowStore.claimResourceDelivery(flow.token);
+  if (!claimed) return false;
+  try {
+    const conversationId = conversationIdOverride ?? flow.conversationId;
+    if (!conversationId) {
+      throw new Error("ig_missing_conversation_id: Zernio resource delivery requires a conversation");
+    }
+    await transport.sendConversationMessage({
+      conversationId,
+      message: flow.resourceDmText,
+    });
+    await flowStore.markCompleted(flow.token);
+    return true;
+  } catch (error: unknown) {
+    await flowStore.releaseResourceDelivery(flow.token);
+    throw error;
+  }
 }
 
 async function deliverFlowResource(
@@ -139,7 +171,9 @@ export async function processCommentEvent(
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
   const { commentId, mediaId, commentText, fromId, fromUsername } = event;
-  const rules = await deps.ruleStore.getActiveRulesForPost(mediaId);
+  const rules = (await deps.ruleStore.getActiveRulesForPost(mediaId)).filter((rule) =>
+    deps.transport ? (rule.transportProvider ?? "META") === "ZERNIO" : true,
+  );
   if (!rules.length) return { handled: false };
 
   const normalizedText = normalizeKeywordMatchText(commentText);
@@ -160,6 +194,74 @@ export async function processCommentEvent(
   const publicReplyPool = matchedRule.replyPool.length
     ? matchedRule.replyPool
     : await deps.ruleStore.getGlobalReplyPool?.() ?? [];
+
+  if (deps.transport) {
+    if (!fromId) throw new Error("ig_missing_sender_id: Zernio follow gate requires an Instagram sender id");
+    if (!deps.flowStore) throw new Error("ig_missing_flow_store: follow gate flow storage is not configured");
+
+    const conversation = await deps.transport.findConversation({ participantId: fromId });
+    const followerStatus = await deps.transport.getFollowerStatus({
+      senderId: fromId,
+      isFollower: conversation?.isFollower,
+    });
+    const publicReply = pickRandom(publicReplyPool);
+
+    if (matchedRule.followGate) {
+      const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
+      const flow = await createFollowGateFlow(
+        {
+          commentId,
+          mediaId,
+          senderId: fromId,
+          conversationId: conversation?.conversationId,
+        },
+        matchedRule.id,
+        matchedRule.dmTemplate,
+        followGateTemplates.retryTemplate,
+        deps.flowStore,
+      );
+
+      if (followerStatus === true && conversation) {
+        const delivered = await deliverTransportResource(flow, deps.transport, deps.flowStore);
+        if (publicReply) {
+          await deps.transport.replyToComment({ postId: mediaId, commentId, message: formatPublicReplyForCommenter(publicReply, fromUsername) });
+        }
+        return {
+          handled: true,
+          action: delivered ? CommentAutomationAction.DM_SENT : CommentAutomationAction.NONE,
+          matchedRuleId: matchedRule.id,
+        };
+      }
+
+      await deps.transport.sendPrivateReply({
+        postId: mediaId,
+        commentId,
+        message: followGateTemplates.initialTemplate,
+        quickReplies: [{
+          title: FOLLOW_GATE_BUTTON_TITLE,
+          payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
+        }],
+      });
+      if (publicReply) {
+        await deps.transport.replyToComment({ postId: mediaId, commentId, message: formatPublicReplyForCommenter(publicReply, fromUsername) });
+      }
+      return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_SENT, matchedRuleId: matchedRule.id };
+    }
+
+    if (conversation) {
+      await deps.transport.sendConversationMessage({ conversationId: conversation.conversationId, message: matchedRule.dmTemplate });
+    } else {
+      await deps.transport.sendPrivateReply({ postId: mediaId, commentId, message: matchedRule.dmTemplate });
+    }
+    if (publicReply) {
+      await deps.transport.replyToComment({ postId: mediaId, commentId, message: formatPublicReplyForCommenter(publicReply, fromUsername) });
+    }
+    return {
+      handled: true,
+      action: publicReply ? CommentAutomationAction.PUBLIC_REPLY : CommentAutomationAction.DM_SENT,
+      matchedRuleId: matchedRule.id,
+    };
+  }
 
   const { token, pageId, pageToken } = await resolvePageAuth(deps.authStore);
 
@@ -233,6 +335,8 @@ export async function processDirectMessageEvent(
     messageText: string;
     senderUsername: string;
     quickReplyPayload?: string;
+    conversationId?: string;
+    isFollower?: boolean | null;
   },
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
@@ -252,6 +356,35 @@ export async function processDirectMessageEvent(
     return { handled: false };
   }
 
+  if (deps.transport) {
+    if (!event.conversationId) throw new Error("ig_missing_conversation_id: Zernio message has no conversation");
+    const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
+    const followsBusiness = await deps.transport.getFollowerStatus({
+      senderId: event.senderId,
+      isFollower: event.isFollower,
+    });
+    if (followsBusiness === true) {
+      const delivered = await deliverTransportResource(flow, deps.transport, deps.flowStore, event.conversationId);
+      return {
+        handled: true,
+        action: delivered ? CommentAutomationAction.DM_SENT : CommentAutomationAction.NONE,
+        matchedRuleId: flow.ruleId,
+      };
+    }
+    if (flow.retryCount >= 3) {
+      await deps.flowStore.expire?.(flow.token);
+      return { handled: true, action: CommentAutomationAction.NONE, matchedRuleId: flow.ruleId };
+    }
+    await deps.transport.sendConversationQuickReply({
+      conversationId: event.conversationId,
+      message: followGateTemplates.retryTemplate,
+      title: FOLLOW_GATE_BUTTON_TITLE,
+      payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
+    });
+    await deps.flowStore.incrementRetry(flow.token);
+    return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_RETRY_SENT, matchedRuleId: flow.ruleId };
+  }
+
   const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
   const { pageId, pageToken } = await resolvePageAuth(deps.authStore);
   let followsBusiness = false;
@@ -268,6 +401,11 @@ export async function processDirectMessageEvent(
       action: delivered ? CommentAutomationAction.DM_SENT : CommentAutomationAction.NONE,
       matchedRuleId: flow.ruleId,
     };
+  }
+
+  if (flow.retryCount >= 3) {
+    await deps.flowStore.expire?.(flow.token);
+    return { handled: true, action: CommentAutomationAction.NONE, matchedRuleId: flow.ruleId };
   }
 
   await sendIgQuickReply(

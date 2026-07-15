@@ -9,6 +9,7 @@ export interface CommentAutomationRule {
   /** "any" matches all posts; otherwise must equal the mediaId */
   postId: string;
   triggerMode: "KEYWORDS" | "ANY_COMMENT";
+  transportProvider?: "META" | "ZERNIO";
   keywords: string[];
   replyPool: string[];
   dmTemplate: string;
@@ -29,11 +30,42 @@ export interface AutomationRuleStore {
   }>;
 }
 
+export interface InstagramAutomationTransport {
+  readonly provider: "zernio";
+  findConversation(input: { participantId: string }): Promise<{
+    conversationId: string;
+    isFollower?: boolean | null;
+  } | null>;
+  getFollowerStatus(input: { senderId: string; isFollower?: boolean | null }): Promise<boolean | null>;
+  sendPrivateReply(input: {
+    postId: string;
+    commentId: string;
+    message: string;
+    quickReplies?: Array<{ title: string; payload: string }>;
+  }): Promise<void>;
+  sendConversationMessage(input: {
+    conversationId: string;
+    message: string;
+  }): Promise<void>;
+  sendConversationQuickReply(input: {
+    conversationId: string;
+    message: string;
+    title: string;
+    payload: string;
+  }): Promise<void>;
+  replyToComment(input: {
+    postId: string;
+    commentId: string;
+    message: string;
+  }): Promise<void>;
+}
+
 export interface FollowGateFlow {
   token: string;
   senderId: string;
   commentId: string;
   mediaId: string;
+  conversationId?: string;
   ruleId: string;
   resourceDmText: string;
   followGateRetryTemplate: string;
@@ -49,6 +81,7 @@ export interface FollowGateFlowStore {
   releaseResourceDelivery(token: string): Promise<void>;
   incrementRetry(token: string): Promise<void>;
   markCompleted(token: string): Promise<void>;
+  expire?(token: string): Promise<void>;
 }
 
 export interface CommentAutomationEventInput {

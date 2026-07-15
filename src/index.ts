@@ -57,7 +57,7 @@ export { getGmailAuthorizeUrl, exchangeGmailCode, refreshGmailToken } from "./au
 export { getDriveAuthorizeUrl, exchangeDriveCode, refreshDriveToken } from "./auth/drive";
 
 // Instagram automation (comment-to-DM engine + webhook handler)
-export { processCommentEvent } from "./automation/engine";
+export { processCommentEvent, processDirectMessageEvent } from "./automation/engine";
 export { verifyInstagramChallenge, processInstagramWebhookPayload } from "./webhooks/instagram";
 export {
   CommentAutomationAction,
@@ -70,7 +70,7 @@ export {
   DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
   FOLLOW_GATE_RECHECK_PREFIX,
 } from "./automation/constants";
-export type { CommentAutomationRule, AutomationRuleStore } from "./automation/types";
+export type { CommentAutomationRule, AutomationRuleStore, InstagramAutomationTransport } from "./automation/types";
 export type {
   FollowGateFlow,
   FollowGateFlowStore,
