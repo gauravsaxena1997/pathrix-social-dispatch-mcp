@@ -36,7 +36,11 @@ export interface InstagramAutomationTransport {
     conversationId: string;
     isFollower?: boolean | null;
   } | null>;
-  getFollowerStatus(input: { senderId: string; isFollower?: boolean | null }): Promise<boolean | null>;
+  getFollowerStatus(input: {
+    senderId: string;
+    conversationId: string;
+    freshAfter: Date;
+  }): Promise<boolean | null>;
   sendPrivateReply(input: {
     postId: string;
     commentId: string;

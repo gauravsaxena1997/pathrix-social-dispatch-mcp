@@ -32,9 +32,11 @@ export type FollowGateFlowStatus =
   typeof FollowGateFlowStatus[keyof typeof FollowGateFlowStatus];
 
 export const DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE =
-  "Hey! I’ve got the resource ready for you 😊 Follow me here, then tap “I follow” and I’ll send it over.";
+  "Hey, thanks for checking out the reel. I've got the resource ready for you.\n\nIf you already follow me, tap \"I follow\" below and I'll send it straight over. If you don't, follow the account first, then come back and tap the button.";
 
 export const DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE =
-  "Hey, I still can’t see the follow on my side. Follow me here when you get a chance, then tap “I follow” again and I’ll check one more time 😊";
+  "Almost there. I couldn't confirm the follow just yet.\n\nIf you've already followed, give Instagram a few seconds and tap \"I follow\" again. If not, follow the account first, then come back and tap the button. I'll send the resource as soon as it comes through.";
 
 export const FOLLOW_GATE_RECHECK_PREFIX = "FOLLOW_GATE_RECHECK:";
+
+export const FOLLOWER_STATUS_FRESHNESS_WINDOW_MS = 2 * 60 * 1000;

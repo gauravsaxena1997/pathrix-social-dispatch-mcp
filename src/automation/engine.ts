@@ -5,6 +5,7 @@ import {
   CommentAutomationAction,
   DEFAULT_FOLLOW_GATE_INITIAL_TEMPLATE,
   DEFAULT_FOLLOW_GATE_RETRY_TEMPLATE,
+  FOLLOWER_STATUS_FRESHNESS_WINDOW_MS,
   FOLLOW_GATE_RECHECK_PREFIX,
 } from "./constants";
 import {
@@ -201,11 +202,6 @@ export async function processCommentEvent(
     if (!fromId) throw new Error("ig_missing_sender_id: Zernio follow gate requires an Instagram sender id");
     if (!deps.flowStore) throw new Error("ig_missing_flow_store: follow gate flow storage is not configured");
 
-    const conversation = await deps.transport.findConversation({ participantId: fromId });
-    const followerStatus = await deps.transport.getFollowerStatus({
-      senderId: fromId,
-      isFollower: conversation?.isFollower,
-    });
     const publicReply = pickRandom(publicReplyPool);
 
     if (matchedRule.followGate) {
@@ -215,25 +211,12 @@ export async function processCommentEvent(
           commentId,
           mediaId,
           senderId: fromId,
-          conversationId: conversation?.conversationId,
         },
         matchedRule.id,
         matchedRule.dmTemplate,
         followGateTemplates.retryTemplate,
         deps.flowStore,
       );
-
-      if (followerStatus === true && conversation) {
-        const delivered = await deliverTransportResource(flow, deps.transport, deps.flowStore);
-        if (publicReply) {
-          await deps.transport.replyToComment({ postId: mediaId, commentId, message: formatPublicReplyForCommenter(publicReply, fromUsername) });
-        }
-        return {
-          handled: true,
-          action: delivered ? CommentAutomationAction.DM_SENT : CommentAutomationAction.NONE,
-          matchedRuleId: matchedRule.id,
-        };
-      }
 
       await deps.transport.sendPrivateReply({
         postId: mediaId,
@@ -251,6 +234,7 @@ export async function processCommentEvent(
       return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_SENT, matchedRuleId: matchedRule.id };
     }
 
+    const conversation = await deps.transport.findConversation({ participantId: fromId });
     if (conversation) {
       await deps.transport.sendConversationMessage({ conversationId: conversation.conversationId, message: matchedRule.dmTemplate });
     } else {
@@ -339,7 +323,7 @@ export async function processDirectMessageEvent(
     senderUsername: string;
     quickReplyPayload?: string;
     conversationId?: string;
-    isFollower?: boolean | null;
+    receivedAt?: Date;
   },
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
@@ -362,9 +346,11 @@ export async function processDirectMessageEvent(
   if (deps.transport) {
     if (!event.conversationId) throw new Error("ig_missing_conversation_id: Zernio message has no conversation");
     const followGateTemplates = await resolveFollowGateTemplates(deps.ruleStore);
+    const statusReferenceTime = event.receivedAt ?? new Date();
     const followsBusiness = await deps.transport.getFollowerStatus({
       senderId: event.senderId,
-      isFollower: event.isFollower,
+      conversationId: event.conversationId,
+      freshAfter: new Date(statusReferenceTime.getTime() - FOLLOWER_STATUS_FRESHNESS_WINDOW_MS),
     });
     if (followsBusiness === true) {
       const delivered = await deliverTransportResource(flow, deps.transport, deps.flowStore, event.conversationId);
