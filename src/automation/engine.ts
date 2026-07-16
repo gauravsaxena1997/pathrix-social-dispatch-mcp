@@ -169,11 +169,15 @@ export async function processCommentEvent(
     commentText: string;
     fromUsername: string;
     fromId?: string;
+    conversationId?: string;
+    eventType?: "comment" | "story_reply";
   },
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
-  const { commentId, mediaId, commentText, fromId, fromUsername } = event;
+  const { commentId, mediaId, commentText, conversationId, fromId, fromUsername } = event;
   const provider = deps.provider ?? (deps.transport ? "ZERNIO" : "META");
+  const eventType = event.eventType ?? "comment";
+  const isStoryReply = eventType === "story_reply";
   const rules = (await deps.ruleStore.getActiveRulesForPost(mediaId)).filter((rule) =>
     (rule.transportProvider ?? "META") === provider,
   );
@@ -182,7 +186,13 @@ export async function processCommentEvent(
   const normalizedText = normalizeKeywordMatchText(commentText);
   const globalDefaultKeywords = await resolveGlobalDefaultKeywords(deps.ruleStore);
   const matchedRule = rules.find((rule) => {
-    if (rule.triggerMode === "ANY_COMMENT") return normalizedText.length > 0;
+    if (isStoryReply) {
+      if (rule.triggerMode === "ANY_STORY_REPLY") return normalizedText.length > 0;
+      if (rule.triggerMode !== "STORY_REPLY") return false;
+    } else {
+      if (rule.triggerMode === "ANY_COMMENT") return normalizedText.length > 0;
+      if (rule.triggerMode !== "KEYWORDS") return false;
+    }
     const effectiveKeywords = [...rule.keywords, ...globalDefaultKeywords];
     return effectiveKeywords.some((keyword) => {
       const normalizedKeyword = normalizeKeywordMatchText(keyword);
@@ -211,6 +221,7 @@ export async function processCommentEvent(
           commentId,
           mediaId,
           senderId: fromId,
+          conversationId,
         },
         matchedRule.id,
         matchedRule.dmTemplate,
@@ -218,37 +229,57 @@ export async function processCommentEvent(
         deps.flowStore,
       );
 
-      await deps.transport.sendPrivateReply({
-        postId: mediaId,
-        commentId,
-        message: followGateTemplates.initialTemplate,
-        buttons: [{
-          type: "postback",
+      if (isStoryReply) {
+        const resolvedConversationId = conversationId
+          ?? (await deps.transport.findConversation({ participantId: fromId }))?.conversationId;
+        if (!resolvedConversationId) {
+          throw new Error("ig_missing_conversation_id: story reply follow gate requires a conversation");
+        }
+        await deps.transport.sendConversationButton({
+          conversationId: resolvedConversationId,
+          message: followGateTemplates.initialTemplate,
           title: FOLLOW_GATE_BUTTON_TITLE,
           payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
-        }],
-      });
-      if (publicReply) {
+        });
+      } else {
+        await deps.transport.sendPrivateReply({
+          postId: mediaId,
+          commentId,
+          message: followGateTemplates.initialTemplate,
+          buttons: [{
+            type: "postback",
+            title: FOLLOW_GATE_BUTTON_TITLE,
+            payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
+          }],
+        });
+      }
+      if (publicReply && !isStoryReply) {
         await deps.transport.replyToComment({ postId: mediaId, commentId, message: formatPublicReplyForCommenter(publicReply, fromUsername) });
       }
       return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_SENT, matchedRuleId: matchedRule.id };
     }
 
-    const conversation = await deps.transport.findConversation({ participantId: fromId });
-    if (conversation) {
+    const conversation = conversationId
+      ? { conversationId }
+      : await deps.transport.findConversation({ participantId: fromId });
+    if (conversation?.conversationId) {
       await deps.transport.sendConversationMessage({ conversationId: conversation.conversationId, message: matchedRule.dmTemplate });
-    } else {
+    } else if (!isStoryReply) {
       await deps.transport.sendPrivateReply({ postId: mediaId, commentId, message: matchedRule.dmTemplate });
+    } else {
+      throw new Error("ig_missing_conversation_id: story reply delivery requires a conversation");
     }
-    if (publicReply) {
+    if (publicReply && !isStoryReply) {
       await deps.transport.replyToComment({ postId: mediaId, commentId, message: formatPublicReplyForCommenter(publicReply, fromUsername) });
     }
     return {
       handled: true,
-      action: publicReply ? CommentAutomationAction.PUBLIC_REPLY : CommentAutomationAction.DM_SENT,
+      action: publicReply && !isStoryReply ? CommentAutomationAction.PUBLIC_REPLY : CommentAutomationAction.DM_SENT,
       matchedRuleId: matchedRule.id,
     };
   }
+
+  if (isStoryReply) return { handled: false };
 
   const { token, pageId, pageToken } = await resolvePageAuth(deps.authStore);
 

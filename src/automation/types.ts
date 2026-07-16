@@ -8,7 +8,7 @@ export interface CommentAutomationRule {
   id: string;
   /** "any" matches all posts; otherwise must equal the mediaId */
   postId: string;
-  triggerMode: "KEYWORDS" | "ANY_COMMENT";
+  triggerMode: "KEYWORDS" | "ANY_COMMENT" | "STORY_REPLY" | "ANY_STORY_REPLY";
   transportProvider?: "META" | "ZERNIO";
   keywords: string[];
   replyPool: string[];
@@ -90,7 +90,7 @@ export interface FollowGateFlowStore {
 
 export interface CommentAutomationEventInput {
   eventKey: string;
-  eventType: "comment" | "message";
+  eventType: "comment" | "message" | "story_reply";
   mediaId: string;
   commentId?: string;
   messageId?: string;
@@ -104,7 +104,7 @@ export interface CommentAutomationEventInput {
 
 export interface CommentAutomationEventOutcomeInput {
   eventKey: string;
-  eventType?: "comment" | "message";
+  eventType?: "comment" | "message" | "story_reply";
   status: CommentAutomationEventStatus;
   action?: CommentAutomationAction;
   matchedRuleId?: string;
