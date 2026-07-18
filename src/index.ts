@@ -19,7 +19,6 @@ export {
   getValidMetaToken,
   getValidYouTubeToken,
   getValidXToken,
-  getValidGmailToken,
   refreshAllTokens,
 } from "./token-refresher";
 
