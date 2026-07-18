@@ -30,6 +30,12 @@ export async function refreshGmailToken(
 ): Promise<{ access_token: string; expires_in: number }> {
   const body = new URLSearchParams({ refresh_token: refreshToken, client_id: clientId, client_secret: clientSecret, grant_type: "refresh_token" });
   const res = await fetch("https://oauth2.googleapis.com/token", { method: "POST", body });
-  if (!res.ok) throw new Error(`gmail_refresh_${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    if (text.includes('"invalid_grant"')) {
+      throw new Error("gmail_refresh_invalid_grant: reconnect Gmail from /api/social-dispatch/auth/gmail");
+    }
+    throw new Error(`gmail_refresh_${res.status}: ${text}`);
+  }
   return res.json();
 }
