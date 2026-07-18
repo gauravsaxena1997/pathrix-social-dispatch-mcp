@@ -134,11 +134,50 @@ export async function getValidGmailToken(
   return refreshed.access_token;
 }
 
-export async function refreshAllTokens(store: PlatformAuthStore): Promise<void> {
-  await Promise.allSettled([
-    getValidMetaToken("default", store),
-    getValidYouTubeToken("default", store),
-    getValidXToken("default", store),
-    getValidGmailToken("default", store),
-  ]);
+export type TokenRefreshPlatform = "meta" | "youtube" | "x" | "gmail";
+
+export type TokenRefreshResult = {
+  platform: TokenRefreshPlatform;
+  status: "fulfilled" | "rejected";
+  reason?: string;
+};
+
+export type RefreshAllTokensResult = {
+  refreshed: TokenRefreshResult[];
+};
+
+export async function refreshAllTokens(store: PlatformAuthStore): Promise<RefreshAllTokensResult> {
+  const tasks: Array<[TokenRefreshPlatform, Promise<unknown>]> = [
+    ["meta", getValidMetaToken("default", store)],
+    ["youtube", getValidYouTubeToken("default", store)],
+    ["x", getValidXToken("default", store)],
+    ["gmail", getValidGmailToken("default", store)],
+  ];
+
+  const settled = await Promise.allSettled(tasks.map(([, task]) => task));
+  const refreshed = settled.map((result, index): TokenRefreshResult => {
+    const platform = tasks[index]?.[0];
+    if (!platform) {
+      return { platform: "meta", status: "rejected", reason: "unknown_refresh_task" };
+    }
+    if (result.status === "fulfilled") {
+      return { platform, status: "fulfilled" };
+    }
+    return {
+      platform,
+      status: "rejected",
+      reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+    };
+  });
+
+  const failed = refreshed.filter((result) => result.status === "rejected");
+  if (failed.length > 0) {
+    throw new Error(
+      `token_refresh_failed: ${failed
+        .map((result) => `${result.platform}: ${result.reason ?? "unknown_error"}`)
+        .join("; ")}`
+    );
+  }
+
+  return { refreshed };
 }
