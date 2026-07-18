@@ -90,6 +90,33 @@ export interface ContentStore {
   resolveManualFlag(id: string, platform: string, postUrl: string): Promise<{ finalStatus: PublishStatus }>;
 }
 
+export interface SocialStore {
+  getAuth(platform: PublishPlatform, accountId: string): Promise<PlatformAuth | null>;
+  saveAuth(auth: PlatformAuth): Promise<void>;
+  getAutomationBinding(id: string): Promise<AutomationBinding | null>;
+  saveAutomationBinding(binding: AutomationBinding): Promise<void>;
+  appendAutomationEvent(event: AutomationEvent): Promise<void>;
+  recordIdempotency(key: string, result: unknown): Promise<void>;
+}
+
+export interface AutomationBinding {
+  id: string;
+  accountId: string;
+  expectedPublishAt: Date;
+  captionText: string;
+  mediaType?: string | null;
+  status: "pending" | "matched" | "ambiguous" | "expired" | "failed" | "cancelled";
+  matchedMediaId?: string | null;
+}
+
+export interface AutomationEvent {
+  eventKey: string;
+  eventType: "comment" | "message" | "story_reply";
+  status: "received" | "processing" | "completed" | "failed" | "dead_letter";
+  payload: Record<string, unknown>;
+  createdAt: Date;
+}
+
 // ─── Owned-account profile snapshots ─────────────────────────────────────────
 
 export interface OwnedProfilePost {

@@ -92,6 +92,22 @@ export {
   refreshAccountSnapshot,
 } from "./owned-profile/service";
 
+export { createInstagramService } from "./services/instagram";
+export { createYouTubeService } from "./services/youtube";
+export { createSocialAnalyticsService } from "./services/analytics";
+export { createInstagramAutomationService } from "./services/automation";
+export { createSocialReconciliationService } from "./services/reconciliation";
+export {
+  createZernioInstagramTransport,
+  listActiveInstagramStories,
+  resolveFreshFollowerStatus,
+} from "./providers/zernio-instagram";
+export type { ActiveInstagramStory } from "./providers/zernio-instagram";
+export type { InstagramService, InstagramPublishInput } from "./services/instagram";
+export type { YouTubeService } from "./services/youtube";
+export type { SocialAnalyticsService } from "./services/analytics";
+export type { SocialServiceDeps, InstagramServiceDeps, YouTubeServiceDeps } from "./services/types";
+
 // Types
 export type { RedditPostResult } from "./adapters/reddit";
 export type { IgPublishResult, IgMediaType } from "./adapters/instagram";
@@ -128,6 +144,9 @@ export type {
   OwnedSocialComment,
   OwnedSocialPostDetails,
   OwnedSocialProfileProvider,
+  SocialStore,
+  AutomationBinding,
+  AutomationEvent,
 } from "./schema";
 
 export { PUBLISH_PLATFORMS } from "./schema";
