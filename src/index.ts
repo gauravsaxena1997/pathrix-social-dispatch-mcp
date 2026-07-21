@@ -95,12 +95,14 @@ export { createInstagramService } from "./services/instagram";
 export { createYouTubeService } from "./services/youtube";
 export { createSocialAnalyticsService } from "./services/analytics";
 export { createInstagramAutomationService } from "./services/automation";
+export { createHybridInstagramAutomationService } from "./services/hybrid-automation";
 export { createSocialReconciliationService } from "./services/reconciliation";
 export {
   createZernioInstagramTransport,
   listActiveInstagramStories,
   resolveFreshFollowerStatus,
 } from "./providers/zernio-instagram";
+export { createZernioFollowerStatusProvider } from "./providers/zernio-follower-status";
 export type { ActiveInstagramStory } from "./providers/zernio-instagram";
 export type { InstagramService, InstagramPublishInput } from "./services/instagram";
 export type { YouTubeService } from "./services/youtube";
