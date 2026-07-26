@@ -44,18 +44,38 @@ export async function handleMetaCallback(
 
 // ─── YouTube ──────────────────────────────────────────────────────────────────
 
-export function initYouTubeAuth(): { redirectUrl: string; state: string } {
+export function initYouTubeAuth(): {
+  redirectUrl: string;
+  state: string;
+  nonce: string;
+} {
   const clientId = requireEnv("GOOGLE_CLIENT_ID");
   const state = crypto.randomBytes(16).toString("hex");
+  const nonce = crypto.randomBytes(24).toString("base64url");
   const redirectUri = `${callbackBase()}/api/social-dispatch/auth/youtube/callback`;
-  return { redirectUrl: getYouTubeAuthorizeUrl(state, redirectUri, clientId), state };
+  return {
+    redirectUrl: getYouTubeAuthorizeUrl(
+      state,
+      nonce,
+      redirectUri,
+      clientId,
+    ),
+    state,
+    nonce,
+  };
 }
 
 export async function handleYouTubeCallback(
   code: string,
   state: string,
   expectedState: string
-): Promise<{ access_token: string; refresh_token: string; expires_at: number }> {
+): Promise<{
+  access_token: string;
+  refresh_token?: string;
+  expires_at: number;
+  id_token?: string;
+  scope?: string;
+}> {
   if (state !== expectedState) throw new Error("state_mismatch");
   const clientId = requireEnv("GOOGLE_CLIENT_ID");
   const clientSecret = requireEnv("GOOGLE_CLIENT_SECRET");
@@ -66,6 +86,8 @@ export async function handleYouTubeCallback(
     access_token: tok.access_token,
     refresh_token: tok.refresh_token,
     expires_at: Date.now() + tok.expires_in * 1000,
+    id_token: tok.id_token,
+    scope: tok.scope,
   };
 }
 

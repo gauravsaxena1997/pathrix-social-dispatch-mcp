@@ -3,7 +3,7 @@ export const API_ENDPOINTS = {
   threads: "https://graph.threads.net/v1.0",
   reddit_oauth: "https://oauth.reddit.com",
   yt_api: "https://www.googleapis.com/youtube/v3",
-  yt_upload: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable",
+  yt_upload: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
   x_api: "https://api.x.com/2",
 } as const;
 
@@ -31,8 +31,10 @@ export const PLATFORM_LIMITS = {
     rateLimit: 60,
   },
   youtube: {
-    quotaPerUpload: 1600,
-    quotaPerDay: 10000,
+    videosInsertCallsPerDayDefault: 100,
+    searchListCallsPerDayDefault: 100,
+    otherEndpointUnitsPerDayDefault: 10000,
+    warningThreshold: 0.8,
     pollIntervalMs: 60_000,
   },
   x: {

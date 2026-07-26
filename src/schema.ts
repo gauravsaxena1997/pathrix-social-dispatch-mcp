@@ -69,6 +69,59 @@ export interface PlatformAuthStore {
   list(): Promise<Array<{ platform: string; accountId: string; updatedAt: Date }>>;
 }
 
+export type SocialAccountStatus =
+  | "PENDING_CONFIRMATION"
+  | "ACTIVE"
+  | "NEEDS_REAUTH"
+  | "DISABLED";
+
+export type SocialAccountCapability =
+  | "ANALYTICS_READ"
+  | "COMMENTS_READ"
+  | "UPLOAD_VIDEO"
+  | "MANAGE_VIDEO";
+
+export type SafeSocialAccount = {
+  id: string;
+  platform: PublishPlatform;
+  providerChannelId: string;
+  title: string;
+  handle: string | null;
+  maskedIdentity: string | null;
+  status: SocialAccountStatus;
+  scopes: string[];
+  capabilities: SocialAccountCapability[];
+  accessTokenExpiresAt: Date | null;
+  lastVerifiedAt: Date | null;
+  confirmedAt: Date | null;
+  updatedAt: Date;
+};
+
+export interface SocialAccountStore {
+  list(platform?: PublishPlatform): Promise<SafeSocialAccount[]>;
+  get(accountId: string): Promise<SafeSocialAccount | null>;
+}
+
+export type YouTubeAccountCredential = {
+  accountId: string;
+  providerChannelId: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number | null;
+};
+
+export interface YouTubeAccountCredentialStore {
+  listActiveAccountIds(): Promise<string[]>;
+  load(accountId: string): Promise<YouTubeAccountCredential | null>;
+  saveRefreshed(input: {
+    accountId: string;
+    accessToken: string;
+    expiresAt: number;
+    verifiedAt: Date;
+  }): Promise<void>;
+  markNeedsReauth(accountId: string): Promise<{ transitioned: boolean }>;
+}
+
 export type ContentRow = {
   id: string;
   title: string;
@@ -81,11 +134,23 @@ export type ContentRow = {
   manualFlags: string | null;
   scheduledAt: Date | null;
   publishedAt: Date | null;
+  socialAccountId: string | null;
+  publication?: {
+    id: string;
+    status: string;
+    scheduledAt: Date | null;
+    stageAt: Date;
+    providerVideoId: string | null;
+    providerUrl: string | null;
+    lastError: string | null;
+    publishedAt: Date | null;
+    cancelledAt: Date | null;
+  } | null;
 };
 
 export interface ContentStore {
   get(id: string): Promise<ContentRow | null>;
-  schedule(id: string, scheduledAt: Date): Promise<void>;
+  schedule(id: string, scheduledAt: Date, requestKey?: string): Promise<void>;
   cancelSchedule(id: string): Promise<{ ok: boolean; reason?: string }>;
   resolveManualFlag(id: string, platform: string, postUrl: string): Promise<{ finalStatus: PublishStatus }>;
 }
@@ -284,6 +349,7 @@ export type SocialDispatchEvent = {
 export interface SocialDispatchDeps {
   contentStore: ContentStore;
   authStore: PlatformAuthStore;
+  accountStore: SocialAccountStore;
   publisher: (contentId: string) => Promise<PublishResult[]>;
   onEvent?: (e: SocialDispatchEvent) => void | Promise<void>;
 }

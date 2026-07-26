@@ -10,6 +10,7 @@ import type {
   YouTubeAnalytics28d,
   PendingComment,
 } from "../schema";
+import { detectAuthenticatedYouTubeChannel } from "../auth/youtube";
 
 const YT_API = "https://www.googleapis.com/youtube/v3";
 const YT_ANALYTICS_API = "https://youtubeanalytics.googleapis.com/v2";
@@ -27,9 +28,17 @@ async function ytGet(path: string, token: string): Promise<Response> {
   });
 }
 
-export async function fetchYouTubeAnalytics(token: string): Promise<YouTubeAnalytics28d | null> {
-  const endDate = new Date().toISOString().slice(0, 10);
-  const startDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+export async function fetchYouTubeAnalytics(
+  token: string,
+  options: { startDate?: string; endDate?: string } = {},
+): Promise<YouTubeAnalytics28d | null> {
+  const completedEnd = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const endDate =
+    options.endDate ?? completedEnd.toISOString().slice(0, 10);
+  const defaultStart = new Date(
+    new Date(`${endDate}T00:00:00.000Z`).getTime() - 27 * 24 * 60 * 60 * 1000,
+  );
+  const startDate = options.startDate ?? defaultStart.toISOString().slice(0, 10);
   const metrics = "estimatedMinutesWatched,views,likes,averageViewDuration,subscribersGained,subscribersLost";
 
   const res = await fetch(
@@ -38,9 +47,8 @@ export async function fetchYouTubeAnalytics(token: string): Promise<YouTubeAnaly
   );
   if (!res.ok) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- YouTube Analytics API response shape
-  const data: any = await res.json();
-  const row: number[] = data.rows?.[0];
+  const data = (await res.json()) as { rows?: number[][] };
+  const row = data.rows?.[0];
   if (!row) return null;
 
   return {
@@ -56,15 +64,18 @@ export async function fetchYouTubeAnalytics(token: string): Promise<YouTubeAnaly
 // Fetch top-level comments on our recent videos that we haven't replied to.
 export async function fetchYtPendingComments(
   accessToken: string,
-  opts: { maxResults?: number } = {},
+  opts: { maxResults?: number; channelId?: string } = {},
 ): Promise<PendingComment[]> {
   const { maxResults = 20 } = opts;
   const pending: PendingComment[] = [];
 
   try {
+    const channelId =
+      opts.channelId ??
+      (await detectAuthenticatedYouTubeChannel(accessToken)).channelId;
     // moderationStatus=heldForReview shows unanswered comments; use likelySpam=false
     const res = await fetch(
-      `${YT_API}/commentThreads?part=snippet&allThreadsRelatedToChannelId=mine&order=time&maxResults=${maxResults}&moderationStatus=published`,
+      `${YT_API}/commentThreads?part=snippet&allThreadsRelatedToChannelId=${encodeURIComponent(channelId)}&order=time&maxResults=${maxResults}&moderationStatus=published`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (!res.ok) return [];
@@ -125,9 +136,8 @@ export async function scrapeYouTubeProfileViaApi(
   handle: string,
   accessToken: string
 ): Promise<OwnedProfileSnapshot | null> {
-  const channelHandle = handle.startsWith("@") ? handle.slice(1) : handle;
   const channelRes = await ytGet(
-    `/channels?part=snippet,statistics,brandingSettings,contentDetails&forHandle=${channelHandle}`,
+    "/channels?part=snippet,statistics,brandingSettings,contentDetails&mine=true&maxResults=1",
     accessToken
   );
   if (!channelRes.ok) return null;
@@ -214,6 +224,72 @@ export async function scrapeYouTubeProfileViaApi(
   };
 }
 
+export async function fetchYouTubePostDetails(
+  accessToken: string,
+  postId: string,
+): Promise<OwnedSocialPostDetails> {
+  const videoResponse = await ytGet(
+    `/videos?part=statistics&id=${encodeURIComponent(postId)}`,
+    accessToken,
+  );
+  if (!videoResponse.ok) {
+    throw new Error(`youtube_video_details_${videoResponse.status}`);
+  }
+  const videoData = (await videoResponse.json()) as {
+    items?: Array<{
+      statistics?: {
+        viewCount?: string;
+        likeCount?: string;
+        commentCount?: string;
+      };
+    }>;
+  };
+  const statistics = videoData.items?.[0]?.statistics;
+  if (!statistics) throw new Error("youtube_video_not_found");
+
+  const commentsResponse = await ytGet(
+    `/commentThreads?part=snippet&videoId=${encodeURIComponent(postId)}&order=time&maxResults=50`,
+    accessToken,
+  );
+  const commentsData = commentsResponse.ok
+    ? ((await commentsResponse.json()) as {
+        items?: Array<{
+          id?: string;
+          snippet?: {
+            topLevelComment?: {
+              snippet?: {
+                authorDisplayName?: string;
+                textDisplay?: string;
+                publishedAt?: string;
+                likeCount?: number;
+              };
+            };
+          };
+        }>;
+      })
+    : {};
+  return {
+    platform: "youtube",
+    postId,
+    fetchedAt: new Date().toISOString(),
+    metrics: {
+      views: Number(statistics.viewCount ?? 0),
+      likes: Number(statistics.likeCount ?? 0),
+      comments: Number(statistics.commentCount ?? 0),
+    },
+    comments: (commentsData.items ?? []).map((item) => {
+      const snippet = item.snippet?.topLevelComment?.snippet;
+      return {
+        id: item.id ?? "",
+        username: snippet?.authorDisplayName ?? "unknown",
+        text: (snippet?.textDisplay ?? "").replace(/<[^>]+>/g, ""),
+        timestamp: snippet?.publishedAt ?? "",
+        likeCount: snippet?.likeCount ?? 0,
+      };
+    }),
+  };
+}
+
 function requireYouTubeSnapshot(snapshot: OwnedProfileSnapshot | null, handle: string): OwnedProfileSnapshot {
   if (!snapshot) {
     throw new Error(`youtube_profile_not_found:${handle}`);
@@ -256,13 +332,7 @@ async function getYouTubeAccountAnalytics(input: OwnedSocialAccountInput): Promi
 }
 
 async function getYouTubePostDetails(input: OwnedSocialPostDetailsInput): Promise<OwnedSocialPostDetails> {
-  return {
-    platform: "youtube",
-    postId: input.postId,
-    fetchedAt: new Date().toISOString(),
-    metrics: {},
-    comments: [],
-  };
+  return fetchYouTubePostDetails(input.accessToken, input.postId);
 }
 
 export const youtubeOwnedProfileProvider: OwnedSocialProfileProvider = {

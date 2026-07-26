@@ -20,6 +20,7 @@ export {
   getValidYouTubeToken,
   getValidXToken,
   refreshAllTokens,
+  refreshAllYouTubeAccounts,
 } from "./token-refresher";
 
 // Auth handler functions (OAuth init + callback logic)
@@ -34,7 +35,18 @@ export { publishSelfPost, publishLinkPost, getUserRecentPosts, checkSelfPromoRat
 export { publishIgImage, publishIgReel, publishIgCarousel, replyToIgComment, sendIgDM, likeIgComment } from "./adapters/instagram";
 export { publishThreadsPost } from "./adapters/threads";
 export { publishFbPagePost, publishFbPagePhoto } from "./adapters/facebook-page";
-export { uploadYouTubeVideo, pollYouTubeProcessing } from "./adapters/youtube";
+export {
+  uploadYouTubeVideo,
+  pollYouTubeProcessing,
+  fetchYouTubeVideoSource,
+  initiateYouTubeResumableUpload,
+  queryYouTubeUploadOffset,
+  uploadYouTubeVideoBytes,
+  getYouTubeVideoState,
+  updateYouTubeVideoSchedule,
+  setYouTubeThumbnail,
+  addYouTubeVideoToPlaylist,
+} from "./adapters/youtube";
 export { publishXTweet, publishXThread, splitIntoThread } from "./adapters/x";
 
 // Auth helpers (low-level OAuth URL generation + code exchange)
@@ -50,7 +62,18 @@ export {
   subscribeAppToPage,
   getThreadsUserId,
 } from "./auth/meta";
-export { getYouTubeAuthorizeUrl, exchangeYouTubeCode, refreshYouTubeToken } from "./auth/youtube";
+export {
+  YOUTUBE_OAUTH_SCOPES,
+  getYouTubeAuthorizeUrl,
+  exchangeYouTubeCode,
+  refreshYouTubeToken,
+  verifyGoogleIdToken,
+  detectAuthenticatedYouTubeChannel,
+} from "./auth/youtube";
+export type {
+  GoogleIdentityClaims,
+  YouTubeChannelIdentity,
+} from "./auth/youtube";
 export { generatePkce, getXAuthorizeUrl, exchangeXCode, refreshXToken } from "./auth/x";
 export { getGmailAuthorizeUrl, exchangeGmailCode, refreshGmailToken } from "./auth/gmail";
 export { getDriveAuthorizeUrl, exchangeDriveCode, refreshDriveToken } from "./auth/drive";
@@ -82,7 +105,12 @@ export type { InstagramWebhookDeps, InstagramWebhookResult } from "./webhooks/in
 
 // Owned-account profile scrapers (Instagram Graph API + YouTube Data API v3)
 export { getIgUserIdForHandle, scrapeInstagramGraphProfile, fetchIgPendingComments } from "./owned-profile/instagram";
-export { fetchYouTubeAnalytics, scrapeYouTubeProfileViaApi, fetchYtPendingComments } from "./owned-profile/youtube";
+export {
+  fetchYouTubeAnalytics,
+  scrapeYouTubeProfileViaApi,
+  fetchYtPendingComments,
+  fetchYouTubePostDetails,
+} from "./owned-profile/youtube";
 export {
   getAccountSummary,
   getAccountAnalytics,
@@ -125,6 +153,12 @@ export type {
   ManualFlag,
   ManualFlagReason,
   PlatformAuthStore,
+  SocialAccountStore,
+  SocialAccountStatus,
+  SocialAccountCapability,
+  SafeSocialAccount,
+  YouTubeAccountCredential,
+  YouTubeAccountCredentialStore,
   ContentStore,
   ContentRow,
   SocialDispatchDeps,

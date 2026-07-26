@@ -1,7 +1,12 @@
 import { refreshLongLivedToken } from "./auth/meta";
 import { refreshYouTubeToken } from "./auth/youtube";
+import { detectAuthenticatedYouTubeChannel } from "./auth/youtube";
 import { refreshXToken } from "./auth/x";
-import type { PlatformAuth, PlatformAuthStore } from "./schema";
+import type {
+  PlatformAuth,
+  PlatformAuthStore,
+  YouTubeAccountCredentialStore,
+} from "./schema";
 
 const SKEW_MS = 5 * 60 * 1000;
 
@@ -106,7 +111,7 @@ export async function getValidXToken(
   return { accessToken: refreshed.access_token };
 }
 
-export type TokenRefreshPlatform = "meta" | "youtube" | "x";
+export type TokenRefreshPlatform = "meta" | "x";
 
 export type TokenRefreshResult = {
   platform: TokenRefreshPlatform;
@@ -121,7 +126,6 @@ export type RefreshAllTokensResult = {
 export async function refreshAllTokens(store: PlatformAuthStore): Promise<RefreshAllTokensResult> {
   const tasks: Array<[TokenRefreshPlatform, Promise<unknown>]> = [
     ["meta", getValidMetaToken("default", store)],
-    ["youtube", getValidYouTubeToken("default", store)],
     ["x", getValidXToken("default", store)],
   ];
 
@@ -151,4 +155,76 @@ export async function refreshAllTokens(store: PlatformAuthStore): Promise<Refres
   }
 
   return { refreshed };
+}
+
+export type YouTubeAccountRefreshResult = {
+  accountId: string;
+  status: "fulfilled" | "rejected";
+  needsReauthTransition?: boolean;
+  reason?: string;
+};
+
+export async function refreshAllYouTubeAccounts(
+  store: YouTubeAccountCredentialStore,
+  concurrency = 3,
+): Promise<YouTubeAccountRefreshResult[]> {
+  const accountIds = await store.listActiveAccountIds();
+  const results: YouTubeAccountRefreshResult[] = [];
+  let cursor = 0;
+
+  async function worker(): Promise<void> {
+    while (cursor < accountIds.length) {
+      const index = cursor;
+      cursor += 1;
+      const accountId = accountIds[index];
+      if (!accountId) continue;
+      try {
+        const credential = await store.load(accountId);
+        if (!credential) throw new Error("youtube_account_credential_missing");
+        const refreshed = await refreshYouTubeToken(
+          credential.refreshToken,
+          requireEnv("GOOGLE_CLIENT_ID"),
+          requireEnv("GOOGLE_CLIENT_SECRET"),
+        );
+        const channel = await detectAuthenticatedYouTubeChannel(
+          refreshed.access_token,
+        );
+        if (channel.channelId !== credential.providerChannelId) {
+          throw new Error("youtube_channel_identity_mismatch");
+        }
+        await store.saveRefreshed({
+          accountId,
+          accessToken: refreshed.access_token,
+          expiresAt: Date.now() + refreshed.expires_in * 1000,
+          verifiedAt: new Date(),
+        });
+        results.push({ accountId, status: "fulfilled" });
+      } catch (error: unknown) {
+        const reason =
+          error instanceof Error ? error.message : "youtube_refresh_failed";
+        if (
+          reason === "yt_refresh_invalid_grant" ||
+          reason === "youtube_channel_identity_mismatch"
+        ) {
+          const transition = await store.markNeedsReauth(accountId);
+          results.push({
+            accountId,
+            status: "rejected",
+            reason,
+            needsReauthTransition: transition.transitioned,
+          });
+          continue;
+        }
+        results.push({ accountId, status: "rejected", reason });
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.max(1, Math.min(concurrency, accountIds.length || 1)) },
+      () => worker(),
+    ),
+  );
+  return results;
 }

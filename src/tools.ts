@@ -5,6 +5,7 @@ import type { SocialDispatchDeps } from "./schema";
 const DepsSchema = z.object({
   contentStore: z.object({ get: z.function(), schedule: z.function(), cancelSchedule: z.function(), resolveManualFlag: z.function() }),
   authStore: z.object({ load: z.function(), save: z.function(), list: z.function() }),
+  accountStore: z.object({ list: z.function(), get: z.function() }),
   publisher: z.function(),
   onEvent: z.function().optional(),
 });
@@ -14,26 +15,73 @@ export function registerSocialDispatchTools(
   deps: SocialDispatchDeps
 ): void {
   DepsSchema.parse(deps);
-  const { contentStore, authStore, publisher, onEvent } = deps;
+  const { contentStore, authStore, accountStore, publisher, onEvent } = deps;
   const emit = (type: string, payload: Record<string, unknown>) =>
     onEvent?.({ type, payload, timestamp: new Date().toISOString() });
 
   server.tool(
-    "social_list_platform_auth",
-    "List which social platforms are currently connected (have valid auth tokens stored). Returns platform name, account ID, and last updated timestamp.",
-    {},
-    async () => {
+    "social_list_accounts",
+    "List safe social-account metadata. Tokens, full emails, upload sessions, and raw provider errors are never returned.",
+    {
+      platform: z.enum(["instagram", "threads", "facebook_page", "reddit", "youtube", "x"]).optional(),
+    },
+    async ({ platform }) => {
       try {
-        const platforms = await authStore.list();
-        if (platforms.length === 0) {
-          return { content: [{ type: "text", text: "No platforms connected yet. Connect each platform via your application's auth flow." }] };
+        const [accounts, legacyConnections] = await Promise.all([
+          accountStore.list(platform),
+          authStore.list(),
+        ]);
+        const filteredLegacy = legacyConnections.filter(
+          (connection) => !platform || connection.platform === platform,
+        );
+        if (accounts.length === 0 && filteredLegacy.length === 0) {
+          return { content: [{ type: "text", text: "No matching social accounts connected." }] };
         }
-        const lines = platforms.map((p) => `- ${p.platform} (${p.accountId}) - last updated ${p.updatedAt.toISOString()}`);
-        return { content: [{ type: "text", text: `Connected platforms:\n${lines.join("\n")}` }] };
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              accounts,
+              legacyConnections: filteredLegacy.map((connection) => ({
+                platform: connection.platform,
+                accountId: connection.accountId,
+                updatedAt: connection.updatedAt,
+              })),
+            }, null, 2),
+          }],
+        };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
     }
+  );
+
+  server.tool(
+    "social_get_account",
+    "Get safe capabilities, credential health, and immutable provider identity for one social account.",
+    { accountId: z.string().uuid() },
+    async ({ accountId }) => {
+      try {
+        const account = await accountStore.get(accountId);
+        if (!account) {
+          return {
+            content: [{ type: "text", text: "Social account not found." }],
+            isError: true,
+          };
+        }
+        return {
+          content: [{ type: "text", text: JSON.stringify(account, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          content: [{
+            type: "text",
+            text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          }],
+          isError: true,
+        };
+      }
+    },
   );
 
   server.tool(
@@ -45,6 +93,13 @@ Returns per-platform publish results (status, postUrl, error).`,
     { contentId: z.string().describe("ID of the content row to publish") },
     async ({ contentId }) => {
       try {
+        const row = await contentStore.get(contentId);
+        if (!row) {
+          return { content: [{ type: "text", text: `Error: content not found: ${contentId}` }], isError: true };
+        }
+        const account = row.socialAccountId
+          ? await accountStore.get(row.socialAccountId)
+          : null;
         const results = await publisher(contentId);
         await emit("dispatch.publish_complete", { contentId, results });
         const lines = results.map((r) => {
@@ -52,7 +107,10 @@ Returns per-platform publish results (status, postUrl, error).`,
           if (r.status === "manual_required") return `- ${r.platform}: manual_required - finish in app, then call social_mark_published`;
           return `- ${r.platform}: failed - ${r.error}`;
         });
-        return { content: [{ type: "text", text: `Publish results for ${contentId}:\n${lines.join("\n")}` }] };
+        const target = account
+          ? `\nChannel: ${account.title}${account.handle ? ` (${account.handle})` : ""} [${account.id}]`
+          : "";
+        return { content: [{ type: "text", text: `Publish results for ${contentId}:${target}\n${lines.join("\n")}` }] };
       } catch (err) {
         await emit("dispatch.publish_error", { contentId, error: err instanceof Error ? err.message : String(err) });
         return { content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
@@ -71,11 +129,29 @@ Returns per-platform publish results (status, postUrl, error).`,
 
         const postIds: Record<string, string> = (() => { try { return JSON.parse(row.platformPostIds ?? "{}"); } catch { return {}; } })();
         const flags: string[] = (() => { try { return JSON.parse(row.manualFlags ?? "[]"); } catch { return []; } })();
+        const account = row.socialAccountId
+          ? await accountStore.get(row.socialAccountId)
+          : null;
         const postIdLines = Object.entries(postIds).map(([p, url]) => `  ${p}: ${url}`).join("\n");
 
         const lines = [
           `Title: ${row.title}`,
           `Status: ${row.publishStatus ?? "draft"}`,
+          account
+            ? `Channel: ${account.title}${account.handle ? ` (${account.handle})` : ""} [${account.id}]`
+            : null,
+          row.publication
+            ? `Publication: ${row.publication.status} [${row.publication.id}]`
+            : null,
+          row.publication?.stageAt
+            ? `Stage at: ${row.publication.stageAt.toISOString()}`
+            : null,
+          row.publication?.providerUrl
+            ? `Provider URL: ${row.publication.providerUrl}`
+            : null,
+          row.publication?.lastError
+            ? `Publication error: ${row.publication.lastError}`
+            : null,
           postIdLines ? `Posts:\n${postIdLines}` : null,
           row.publishError ? `Error: ${row.publishError}` : null,
           flags.length ? `Manual flags: ${flags.join(", ")}` : null,
@@ -96,15 +172,27 @@ A PUBLISH_DUE_CONTENT cron job (or equivalent scheduler) picks it up when the ti
     {
       contentId: z.string().describe("ID of the content row"),
       scheduledAt: z.string().describe("ISO 8601 datetime string for when to publish (UTC)"),
+      requestKey: z.string().min(8).optional().describe("Stable idempotency key. Reusing it returns the existing publication."),
     },
-    async ({ contentId, scheduledAt }) => {
+    async ({ contentId, scheduledAt, requestKey }) => {
       try {
         const date = new Date(scheduledAt);
         if (isNaN(date.getTime())) {
           return { content: [{ type: "text", text: `Error: invalid scheduledAt: ${scheduledAt}` }], isError: true };
         }
-        await contentStore.schedule(contentId, date);
-        return { content: [{ type: "text", text: `Scheduled content ${contentId} for ${date.toISOString()}. PUBLISH_DUE_CONTENT cron will dispatch it automatically.` }] };
+        await contentStore.schedule(
+          contentId,
+          date,
+          requestKey ?? `social-schedule:${contentId}:${date.toISOString()}`,
+        );
+        const row = await contentStore.get(contentId);
+        const account = row?.socialAccountId
+          ? await accountStore.get(row.socialAccountId)
+          : null;
+        const target = account
+          ? ` Target: ${account.title}${account.handle ? ` (${account.handle})` : ""} [${account.id}].`
+          : "";
+        return { content: [{ type: "text", text: `Scheduled content ${contentId} for ${date.toISOString()}.${target}` }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
@@ -121,7 +209,14 @@ A PUBLISH_DUE_CONTENT cron job (or equivalent scheduler) picks it up when the ti
         if (!result.ok) {
           return { content: [{ type: "text", text: `Cannot cancel: ${result.reason}` }], isError: true };
         }
-        return { content: [{ type: "text", text: `Cancelled schedule for content ${contentId}. Status reset to draft.` }] };
+        const row = await contentStore.get(contentId);
+        const account = row?.socialAccountId
+          ? await accountStore.get(row.socialAccountId)
+          : null;
+        const target = account
+          ? ` for ${account.title}${account.handle ? ` (${account.handle})` : ""} [${account.id}]`
+          : "";
+        return { content: [{ type: "text", text: `Cancelled schedule for content ${contentId}${target}.` }] };
       } catch (err) {
         return { content: [{ type: "text", text: `Error: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
