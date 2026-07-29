@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { delimiter, extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { API_ENDPOINTS, POLL_CONFIG } from "../config";
 const YT_BASE = API_ENDPOINTS.yt_api;
 const YT_UPLOAD = API_ENDPOINTS.yt_upload;
@@ -14,17 +17,71 @@ export type YouTubeVideoSource = {
   contentLength: number;
 };
 
+function contentTypeForPath(path: string, fallback: string): string {
+  const extension = extname(path).toLowerCase();
+  if (extension === ".mp4") return "video/mp4";
+  if (extension === ".mov") return "video/quicktime";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".png") return "image/png";
+  if (extension === ".webp") return "image/webp";
+  return fallback;
+}
+
+function localAssetPath(source: string): string | null {
+  const requestedPath = source.startsWith("/")
+    ? source
+    : source.startsWith("file://")
+      ? fileURLToPath(source)
+      : null;
+  if (!requestedPath) return null;
+  const roots = (process.env.SOCIAL_MEDIA_LOCAL_ROOTS ?? "")
+    .split(delimiter)
+    .map((root) => root.trim())
+    .filter(Boolean)
+    .map((root) => resolve(root));
+  if (roots.length === 0) {
+    throw new Error("yt_local_asset_roots_missing");
+  }
+  const resolvedPath = resolve(requestedPath);
+  const allowed = roots.some(
+    (root) => resolvedPath === root || resolvedPath.startsWith(`${root}${sep}`),
+  );
+  if (!allowed) throw new Error("yt_local_asset_path_denied");
+  return resolvedPath;
+}
+
+async function fetchBinaryAsset(
+  source: string,
+  fallbackContentType: string,
+): Promise<YouTubeVideoSource> {
+  const localPath = localAssetPath(source);
+  if (localPath) {
+    const file = await readFile(localPath);
+    const bytes = file.buffer.slice(
+      file.byteOffset,
+      file.byteOffset + file.byteLength,
+    ) as ArrayBuffer;
+    return {
+      bytes,
+      contentType: contentTypeForPath(localPath, fallbackContentType),
+      contentLength: bytes.byteLength,
+    };
+  }
+  const response = await fetch(source);
+  if (!response.ok) throw new Error(`yt_asset_fetch_${response.status}`);
+  const bytes = await response.arrayBuffer();
+  return {
+    bytes,
+    contentType:
+      response.headers.get("content-type") ?? fallbackContentType,
+    contentLength: bytes.byteLength,
+  };
+}
+
 export async function fetchYouTubeVideoSource(
   videoUrl: string,
 ): Promise<YouTubeVideoSource> {
-  const videoRes = await fetch(videoUrl);
-  if (!videoRes.ok) throw new Error(`yt_video_fetch_${videoRes.status}`);
-  const bytes = await videoRes.arrayBuffer();
-  return {
-    bytes,
-    contentType: videoRes.headers.get("content-type") ?? "video/mp4",
-    contentLength: bytes.byteLength,
-  };
+  return fetchBinaryAsset(videoUrl, "video/mp4");
 }
 
 export async function initiateYouTubeResumableUpload(input: {
@@ -183,21 +240,17 @@ export async function setYouTubeThumbnail(
   videoId: string,
   thumbnailUrl: string,
 ): Promise<void> {
-  const thumbnail = await fetch(thumbnailUrl);
-  if (!thumbnail.ok) {
-    throw new Error(`yt_thumbnail_fetch_${thumbnail.status}`);
-  }
-  const bytes = await thumbnail.arrayBuffer();
+  const thumbnail = await fetchBinaryAsset(thumbnailUrl, "image/jpeg");
   const response = await fetch(
     `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${encodeURIComponent(videoId)}&uploadType=media`,
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": thumbnail.headers.get("content-type") ?? "image/jpeg",
-        "Content-Length": String(bytes.byteLength),
+        "Content-Type": thumbnail.contentType,
+        "Content-Length": String(thumbnail.contentLength),
       },
-      body: bytes,
+      body: thumbnail.bytes,
     },
   );
   if (!response.ok) throw new Error(`yt_thumbnail_set_${response.status}`);
