@@ -143,6 +143,7 @@ export type { IgPublishResult, IgMediaType } from "./adapters/instagram";
 export type { ThreadsPublishResult } from "./adapters/threads";
 export type { FbPagePublishResult } from "./adapters/facebook-page";
 export type { YouTubePublishResult } from "./adapters/youtube";
+export type { YouTubeVideoSource } from "./adapters/youtube";
 export type { XPublishResult } from "./adapters/x";
 export type {
   PublishPlatform,

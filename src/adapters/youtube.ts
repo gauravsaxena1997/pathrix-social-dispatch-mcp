@@ -1,7 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { delimiter, extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { API_ENDPOINTS, POLL_CONFIG } from "../config";
+import { API_ENDPOINTS, PLATFORM_LIMITS, POLL_CONFIG } from "../config";
 const YT_BASE = API_ENDPOINTS.yt_api;
 const YT_UPLOAD = API_ENDPOINTS.yt_upload;
 
@@ -12,10 +12,20 @@ export interface YouTubePublishResult {
 }
 
 export type YouTubeVideoSource = {
+  contentType: string;
+  contentLength: number;
+  readChunk: (start: number, endExclusive: number) => Promise<ArrayBuffer>;
+  close?: () => Promise<void>;
+};
+
+type YouTubeBinaryAsset = {
   bytes: ArrayBuffer;
   contentType: string;
   contentLength: number;
 };
+
+const YOUTUBE_UPLOAD_CHUNK_BYTES = 64 * 1024 * 1024;
+const YOUTUBE_UPLOAD_RETRY_LIMIT = 3;
 
 function contentTypeForPath(path: string, fallback: string): string {
   const extension = extname(path).toLowerCase();
@@ -53,7 +63,7 @@ function localAssetPath(source: string): string | null {
 async function fetchBinaryAsset(
   source: string,
   fallbackContentType: string,
-): Promise<YouTubeVideoSource> {
+): Promise<YouTubeBinaryAsset> {
   const localPath = localAssetPath(source);
   if (localPath) {
     const file = await readFile(localPath);
@@ -70,18 +80,57 @@ async function fetchBinaryAsset(
   const response = await fetch(source);
   if (!response.ok) throw new Error(`yt_asset_fetch_${response.status}`);
   const bytes = await response.arrayBuffer();
-  return {
+  const asset = {
     bytes,
     contentType:
       response.headers.get("content-type") ?? fallbackContentType,
     contentLength: bytes.byteLength,
   };
+  assertYouTubeUploadSize(asset.contentLength);
+  return asset;
+}
+
+function assertYouTubeUploadSize(contentLength: number): void {
+  if (contentLength > PLATFORM_LIMITS.youtube.maxUploadBytes) {
+    throw new Error(
+      `yt_upload_too_large:${contentLength}:${PLATFORM_LIMITS.youtube.maxUploadBytes}`,
+    );
+  }
 }
 
 export async function fetchYouTubeVideoSource(
   videoUrl: string,
 ): Promise<YouTubeVideoSource> {
-  return fetchBinaryAsset(videoUrl, "video/mp4");
+  const localPath = localAssetPath(videoUrl);
+  if (localPath) {
+    const file = await open(localPath, "r");
+    const stats = await file.stat();
+    assertYouTubeUploadSize(stats.size);
+    return {
+      contentType: contentTypeForPath(localPath, "video/mp4"),
+      contentLength: stats.size,
+      readChunk: async (start, endExclusive) => {
+        const length = endExclusive - start;
+        const buffer = Buffer.allocUnsafe(length);
+        const result = await file.read(buffer, 0, length, start);
+        if (result.bytesRead !== length) {
+          throw new Error("yt_upload_source_read_incomplete");
+        }
+        return buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        ) as ArrayBuffer;
+      },
+      close: () => file.close(),
+    };
+  }
+  const asset = await fetchBinaryAsset(videoUrl, "video/mp4");
+  return {
+    contentType: asset.contentType,
+    contentLength: asset.contentLength,
+    readChunk: async (start, endExclusive) =>
+      asset.bytes.slice(start, endExclusive),
+  };
 }
 
 export async function initiateYouTubeResumableUpload(input: {
@@ -93,6 +142,7 @@ export async function initiateYouTubeResumableUpload(input: {
   contentType: string;
   contentLength: number;
 }): Promise<string> {
+  assertYouTubeUploadSize(input.contentLength);
   const metadata = {
     snippet: {
       title: input.title.slice(0, 100),
@@ -150,32 +200,70 @@ export async function uploadYouTubeVideoBytes(input: {
   source: YouTubeVideoSource;
   offset?: number;
 }): Promise<YouTubePublishResult | null> {
-  const offset = input.offset ?? 0;
-  const bytes = input.source.bytes.slice(offset);
-  const uploadRes = await fetch(input.uploadUri, {
-    method: "PUT",
-    headers: {
-      "Content-Type": input.source.contentType,
-      "Content-Length": String(bytes.byteLength),
-      "Content-Range": `bytes ${offset}-${input.source.contentLength - 1}/${input.source.contentLength}`,
-    },
-    body: bytes,
-  });
-  if (uploadRes.status === 308) return null;
-  if (!uploadRes.ok) throw new Error(`yt_upload_bytes_${uploadRes.status}`);
-  const uploadJson = (await uploadRes.json()) as {
-    id?: string;
-    status?: { uploadStatus?: string };
-  };
-  if (!uploadJson.id) throw new Error("yt_upload_no_video_id");
-  return {
-    url: `https://www.youtube.com/watch?v=${uploadJson.id}`,
-    videoId: uploadJson.id,
-    processingStatus:
-      uploadJson.status?.uploadStatus === "processed"
-        ? "processed"
-        : "uploaded",
-  };
+  let offset = input.offset ?? 0;
+  while (offset < input.source.contentLength) {
+    const endExclusive = Math.min(
+      offset + YOUTUBE_UPLOAD_CHUNK_BYTES,
+      input.source.contentLength,
+    );
+    let shouldRetry = true;
+    for (let attempt = 1; attempt <= YOUTUBE_UPLOAD_RETRY_LIMIT; attempt += 1) {
+      try {
+        const bytes = await input.source.readChunk(offset, endExclusive);
+        const uploadRes = await fetch(input.uploadUri, {
+          method: "PUT",
+          headers: {
+            "Content-Type": input.source.contentType,
+            "Content-Length": String(bytes.byteLength),
+            "Content-Range": `bytes ${offset}-${endExclusive - 1}/${input.source.contentLength}`,
+          },
+          body: bytes,
+        });
+        if (uploadRes.status === 308) {
+          const range = uploadRes.headers.get("range");
+          const match = range?.match(/bytes=0-(\d+)/);
+          offset = match ? Number(match[1]) + 1 : endExclusive;
+          shouldRetry = false;
+          break;
+        }
+        if (!uploadRes.ok) {
+          if (uploadRes.status < 500 && uploadRes.status !== 408 && uploadRes.status !== 429) {
+            throw new Error(`yt_upload_bytes_${uploadRes.status}`);
+          }
+          throw new Error(`yt_upload_transient_${uploadRes.status}`);
+        }
+        const uploadJson = (await uploadRes.json()) as {
+          id?: string;
+          status?: { uploadStatus?: string };
+        };
+        if (!uploadJson.id) throw new Error("yt_upload_no_video_id");
+        return {
+          url: `https://www.youtube.com/watch?v=${uploadJson.id}`,
+          videoId: uploadJson.id,
+          processingStatus:
+            uploadJson.status?.uploadStatus === "processed"
+              ? "processed"
+              : "uploaded",
+        };
+      } catch (error) {
+        if (attempt === YOUTUBE_UPLOAD_RETRY_LIMIT) throw error;
+        offset = await queryYouTubeUploadOffset(
+          input.uploadUri,
+          input.source.contentLength,
+        );
+        if (offset >= input.source.contentLength) {
+          throw new Error("yt_upload_completed_without_response");
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(10_000, attempt * 2_000)),
+        );
+      }
+    }
+    if (shouldRetry) {
+      throw new Error("yt_upload_chunk_retry_exhausted");
+    }
+  }
+  return null;
 }
 
 export async function getYouTubeVideoState(
