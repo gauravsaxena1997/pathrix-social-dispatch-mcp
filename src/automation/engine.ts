@@ -181,13 +181,14 @@ export async function processCommentEvent(
   if (!rules.length) return { handled: false };
 
   const normalizedText = normalizeKeywordMatchText(commentText);
+  const hasCommentContent = commentText.trim().length > 0;
   const globalDefaultKeywords = await resolveGlobalDefaultKeywords(deps.ruleStore);
   const matchedRule = rules.find((rule) => {
     if (isStoryReply) {
-      if (rule.triggerMode === "ANY_STORY_REPLY") return normalizedText.length > 0;
+      if (rule.triggerMode === "ANY_STORY_REPLY") return hasCommentContent;
       if (rule.triggerMode !== "STORY_REPLY") return false;
     } else {
-      if (rule.triggerMode === "ANY_COMMENT") return normalizedText.length > 0;
+      if (rule.triggerMode === "ANY_COMMENT") return hasCommentContent;
       if (rule.triggerMode !== "KEYWORDS") return false;
     }
     const effectiveKeywords = [...rule.keywords, ...globalDefaultKeywords];
