@@ -175,12 +175,9 @@ export async function processCommentEvent(
   deps: CommentEventDeps,
 ): Promise<{ handled: boolean; action?: CommentAutomationActionType; matchedRuleId?: string }> {
   const { commentId, mediaId, commentText, conversationId, fromId, fromUsername } = event;
-  const provider = deps.provider ?? (deps.transport ? "ZERNIO" : "META");
   const eventType = event.eventType ?? "comment";
   const isStoryReply = eventType === "story_reply";
-  const rules = (await deps.ruleStore.getActiveRulesForPost(mediaId)).filter((rule) =>
-    (rule.transportProvider ?? "META") === provider,
-  );
+  const rules = await deps.ruleStore.getActiveRulesForPost(mediaId);
   if (!rules.length) return { handled: false };
 
   const normalizedText = normalizeKeywordMatchText(commentText);
