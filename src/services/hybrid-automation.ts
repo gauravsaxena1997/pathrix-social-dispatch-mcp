@@ -148,13 +148,14 @@ export function createHybridInstagramAutomationService(deps: HybridInstagramAuto
     const isStoryReply = eventType === "story_reply";
     const rules = await deps.ruleStore.getActiveRulesForPost(event.mediaId);
     const normalizedText = normalizeKeywordMatchText(event.commentText);
+    const hasCommentContent = event.commentText.trim().length > 0;
     const globalKeywords = await resolveGlobalDefaultKeywords(deps.ruleStore);
     const matchedRule = rules.find((rule) => {
       if (isStoryReply) {
-        if (rule.triggerMode === "ANY_STORY_REPLY") return normalizedText.length > 0;
+        if (rule.triggerMode === "ANY_STORY_REPLY") return hasCommentContent;
         if (rule.triggerMode !== "STORY_REPLY") return false;
       } else {
-        if (rule.triggerMode === "ANY_COMMENT") return normalizedText.length > 0;
+        if (rule.triggerMode === "ANY_COMMENT") return hasCommentContent;
         if (rule.triggerMode !== "KEYWORDS") return false;
       }
       return [...rule.keywords, ...globalKeywords].some((keyword) => {
