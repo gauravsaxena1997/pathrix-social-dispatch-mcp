@@ -20,6 +20,7 @@ import type {
   AutomationRuleStore,
   FollowGateFlow,
   FollowGateFlowStore,
+  InstagramAutomationTransport,
 } from "../automation/types";
 import type { PlatformAuthStore } from "../schema";
 import type { InstagramFollowerStatusProvider } from "../providers/zernio-follower-status";
@@ -64,6 +65,8 @@ export interface HybridInstagramAutomationDeps {
   ruleStore: AutomationRuleStore;
   flowStore?: FollowGateFlowStore;
   followerStatus: InstagramFollowerStatusProvider;
+  /** Zernio renders postback buttons inline. Pathrix still owns the flow and resource delivery. */
+  followGateTransport?: Pick<InstagramAutomationTransport, "sendPrivateReply" | "sendConversationButton">;
 }
 
 async function resolvePageAuth(authStore: PlatformAuthStore) {
@@ -202,6 +205,17 @@ export function createHybridInstagramAutomationService(deps: HybridInstagramAuto
       };
       if (isStoryReply) {
         await sendIgMessage(pageId, { id: event.fromId }, gateMessage, pageToken);
+      } else if (deps.followGateTransport) {
+        await deps.followGateTransport.sendPrivateReply({
+          postId: event.mediaId,
+          commentId: event.commentId,
+          message: templates.initialTemplate,
+          buttons: [{
+            type: "postback",
+            title: FOLLOW_GATE_BUTTON_TITLE,
+            payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
+          }],
+        });
       } else {
         await sendIgQuickReply(pageId, { commentId: event.commentId }, templates.initialTemplate, FOLLOW_GATE_BUTTON_TITLE, `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`, pageToken);
       }
@@ -234,6 +248,7 @@ export function createHybridInstagramAutomationService(deps: HybridInstagramAuto
     senderUsername: string;
     quickReplyPayload?: string;
     conversationId?: string;
+    followerStatus?: boolean | null;
     receivedAt?: Date;
   }): Promise<{ handled: boolean; action?: typeof CommentAutomationAction[keyof typeof CommentAutomationAction]; matchedRuleId?: string }> {
     void event.messageId;
@@ -250,15 +265,17 @@ export function createHybridInstagramAutomationService(deps: HybridInstagramAuto
     if (!event.conversationId) throw new Error("ig_missing_conversation_id: Zernio message has no conversation");
     const templates = await resolveFollowGateTemplates(deps.ruleStore);
     const receivedAt = event.receivedAt ?? new Date();
-    let followsBusiness: boolean | null = null;
-    try {
-      followsBusiness = await deps.followerStatus.getFollowerStatus({
-        senderId: event.senderId,
-        conversationId: event.conversationId,
-        freshAfter: new Date(receivedAt.getTime() - FOLLOWER_STATUS_FRESHNESS_WINDOW_MS),
-      });
-    } catch {
-      // Follower lookup failures fail closed and keep the resource protected.
+    let followsBusiness = event.followerStatus ?? null;
+    if (followsBusiness === null) {
+      try {
+        followsBusiness = await deps.followerStatus.getFollowerStatus({
+          senderId: event.senderId,
+          conversationId: event.conversationId,
+          freshAfter: new Date(receivedAt.getTime() - FOLLOWER_STATUS_FRESHNESS_WINDOW_MS),
+        });
+      } catch {
+        // Follower lookup failures fail closed and keep the resource protected.
+      }
     }
     const { pageId, pageToken } = await resolvePageAuth(deps.authStore);
     if (followsBusiness === true) {
@@ -269,7 +286,16 @@ export function createHybridInstagramAutomationService(deps: HybridInstagramAuto
       await deps.flowStore.expire?.(flow.token);
       return { handled: true, action: CommentAutomationAction.NONE, matchedRuleId: flow.ruleId };
     }
-    await sendIgQuickReply(pageId, { id: event.senderId }, templates.retryTemplate, FOLLOW_GATE_BUTTON_TITLE, `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`, pageToken);
+    if (deps.followGateTransport) {
+      await deps.followGateTransport.sendConversationButton({
+        conversationId: event.conversationId,
+        message: templates.retryTemplate,
+        title: FOLLOW_GATE_BUTTON_TITLE,
+        payload: `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`,
+      });
+    } else {
+      await sendIgQuickReply(pageId, { id: event.senderId }, templates.retryTemplate, FOLLOW_GATE_BUTTON_TITLE, `${FOLLOW_GATE_RECHECK_PREFIX}${flow.token}`, pageToken);
+    }
     await deps.flowStore.incrementRetry(flow.token);
     return { handled: true, action: CommentAutomationAction.FOLLOW_GATE_RETRY_SENT, matchedRuleId: flow.ruleId };
   }
