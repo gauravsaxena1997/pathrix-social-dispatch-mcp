@@ -45,6 +45,7 @@ export {
   getYouTubeVideoState,
   updateYouTubeVideoSchedule,
   setYouTubeThumbnail,
+  setYouTubeThumbnailBytes,
   addYouTubeVideoToPlaylist,
 } from "./adapters/youtube";
 export { publishXTweet, publishXThread, splitIntoThread } from "./adapters/x";

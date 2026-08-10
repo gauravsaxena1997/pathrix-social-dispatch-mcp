@@ -329,16 +329,30 @@ export async function setYouTubeThumbnail(
   thumbnailUrl: string,
 ): Promise<void> {
   const thumbnail = await fetchBinaryAsset(thumbnailUrl, "image/jpeg");
+  await setYouTubeThumbnailBytes(
+    accessToken,
+    videoId,
+    thumbnail.bytes,
+    thumbnail.contentType,
+  );
+}
+
+export async function setYouTubeThumbnailBytes(
+  accessToken: string,
+  videoId: string,
+  bytes: ArrayBuffer,
+  contentType = "image/jpeg",
+): Promise<void> {
   const response = await fetch(
     `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${encodeURIComponent(videoId)}&uploadType=media`,
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": thumbnail.contentType,
-        "Content-Length": String(thumbnail.contentLength),
+        "Content-Type": contentType,
+        "Content-Length": String(bytes.byteLength),
       },
-      body: thumbnail.bytes,
+      body: bytes,
     },
   );
   if (!response.ok) throw new Error(`yt_thumbnail_set_${response.status}`);
