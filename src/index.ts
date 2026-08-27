@@ -111,6 +111,11 @@ export {
   scrapeYouTubeProfileViaApi,
   fetchYtPendingComments,
   fetchYouTubePostDetails,
+  listAuthenticatedYouTubeVideos,
+} from "./owned-profile/youtube";
+export type {
+  YouTubeVideoInventoryItem,
+  YouTubeVideoInventoryOptions,
 } from "./owned-profile/youtube";
 export {
   getAccountSummary,
