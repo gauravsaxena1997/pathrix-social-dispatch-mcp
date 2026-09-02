@@ -115,6 +115,7 @@ export type TokenRefreshPlatform = "meta" | "x";
 
 export type TokenRefreshResult = {
   platform: TokenRefreshPlatform;
+  accountId: string;
   status: "fulfilled" | "rejected";
   reason?: string;
 };
@@ -124,22 +125,43 @@ export type RefreshAllTokensResult = {
 };
 
 export async function refreshAllTokens(store: PlatformAuthStore): Promise<RefreshAllTokensResult> {
-  const tasks: Array<[TokenRefreshPlatform, Promise<unknown>]> = [
-    ["meta", getValidMetaToken("default", store)],
-    ["x", getValidXToken("default", store)],
+  const connections = await store.list();
+  const metaAccountIds = [
+    ...new Set(
+      connections
+        .filter((connection) => connection.platform === "instagram")
+        .map((connection) => connection.accountId),
+    ),
+  ];
+  const tasks: Array<[TokenRefreshPlatform, string, Promise<unknown>]> = [
+    ...metaAccountIds.map(
+      (accountId): [TokenRefreshPlatform, string, Promise<unknown>] => [
+        "meta",
+        accountId,
+        getValidMetaToken(accountId, store),
+      ],
+    ),
+    ["x", "default", getValidXToken("default", store)],
   ];
 
-  const settled = await Promise.allSettled(tasks.map(([, task]) => task));
+  const settled = await Promise.allSettled(tasks.map(([, , task]) => task));
   const refreshed = settled.map((result, index): TokenRefreshResult => {
-    const platform = tasks[index]?.[0];
-    if (!platform) {
-      return { platform: "meta", status: "rejected", reason: "unknown_refresh_task" };
+    const task = tasks[index];
+    if (!task) {
+      return {
+        platform: "meta",
+        accountId: "unknown",
+        status: "rejected",
+        reason: "unknown_refresh_task",
+      };
     }
+    const [platform, accountId] = task;
     if (result.status === "fulfilled") {
-      return { platform, status: "fulfilled" };
+      return { platform, accountId, status: "fulfilled" };
     }
     return {
       platform,
+      accountId,
       status: "rejected",
       reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
     };
@@ -149,7 +171,7 @@ export async function refreshAllTokens(store: PlatformAuthStore): Promise<Refres
   if (failed.length > 0) {
     throw new Error(
       `token_refresh_failed: ${failed
-        .map((result) => `${result.platform}: ${result.reason ?? "unknown_error"}`)
+        .map((result) => `${result.platform}/${result.accountId}: ${result.reason ?? "unknown_error"}`)
         .join("; ")}`
     );
   }
