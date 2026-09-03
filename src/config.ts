@@ -31,7 +31,8 @@ export const PLATFORM_LIMITS = {
     rateLimit: 60,
   },
   youtube: {
-    maxUploadBytes: 5 * 1024 * 1024 * 1024,
+    // Local Mac uploader safety ceiling. YouTube upload eligibility is still verified separately.
+    maxUploadBytes: 8 * 1024 * 1024 * 1024,
     videosInsertCallsPerDayDefault: 100,
     searchListCallsPerDayDefault: 100,
     otherEndpointUnitsPerDayDefault: 10000,
